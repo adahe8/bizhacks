@@ -16,6 +16,7 @@ An AI-powered omnichannel marketing campaign management system that leverages Cr
 ## 🏗️ Architecture
 
 ### Backend (FastAPI + CrewAI)
+
 - **FastAPI**: REST API framework for backend services
 - **SQLModel**: Database ORM with SQLite for data persistence
 - **CrewAI**: Multi-agent framework for AI-powered automation
@@ -23,6 +24,7 @@ An AI-powered omnichannel marketing campaign management system that leverages Cr
 - **LangChain + OpenAI**: LLM integration for content generation
 
 ### Frontend (Next.js + TypeScript)
+
 - **Next.js 14**: React framework with App Router
 - **TypeScript**: Type-safe development
 - **Tailwind CSS**: Utility-first CSS framework
@@ -39,6 +41,7 @@ An AI-powered omnichannel marketing campaign management system that leverages Cr
 ## 🛠️ Installation
 
 ### 1. Clone the repository
+
 ```bash
 git clone <repository-url>
 cd bizhacks
@@ -121,7 +124,8 @@ The frontend will be available at `http://localhost:3000`
 
 ### Creating Campaigns
 
-1. **Manual Creation**: 
+1. **Manual Creation**:
+
    - Click "New Campaign" from the dashboard
    - Choose "Manual Creation"
    - Fill in campaign details
@@ -155,6 +159,7 @@ The system uses specialized CrewAI agents for different tasks:
 ## 📊 API Endpoints
 
 ### Campaign Management
+
 - `GET /api/campaigns/` - List all campaigns
 - `POST /api/campaigns/` - Create new campaign
 - `GET /api/campaigns/{id}` - Get campaign details
@@ -162,11 +167,13 @@ The system uses specialized CrewAI agents for different tasks:
 - `POST /api/campaigns/{id}/approve` - Approve campaign
 
 ### Scheduling
+
 - `GET /api/schedules/` - Get all schedules
 - `POST /api/schedules/{id}/schedule` - Schedule campaign
 - `DELETE /api/schedules/{id}/schedule` - Unschedule campaign
 
 ### AI Operations
+
 - `POST /api/agents/segment-customers` - Run customer segmentation
 - `POST /api/agents/generate-campaigns` - Generate campaign ideas
 - `POST /api/agents/rebalance-budgets` - Rebalance campaign budgets
@@ -176,6 +183,7 @@ The system uses specialized CrewAI agents for different tasks:
 ### Environment Variables
 
 Backend (.env):
+
 ```
 DATABASE_URL=sqlite:///campaign.db
 OPENAI_API_KEY=your_openai_api_key
@@ -184,6 +192,7 @@ DEBUG=True
 ```
 
 Frontend (.env.local):
+
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
@@ -191,12 +200,14 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## 🧪 Testing
 
 ### Backend Tests
+
 ```bash
 cd backend
 pytest
 ```
 
 ### Frontend Tests
+
 ```bash
 cd frontend
 npm run test

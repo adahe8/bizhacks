@@ -1,0 +1,50 @@
+# FastAPI and Server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlmodel
+sqlalchemy
+alembic
+
+# AI/ML
+crewai
+langchain
+langchain-openai
+openai
+
+# Scheduling
+apscheduler
+
+# API and HTTP
+httpx
+requests
+aiohttp
+
+# Data Processing
+pandas
+numpy
+pydantic
+pydantic-settings
+
+# Utilities
+python-dotenv
+python-dateutil
+pytz
+
+# File Processing
+pypdf
+python-docx
+openpyxl
+
+# Testing (optional)
+pytest
+pytest-asyncio
+pytest-cov
+
+# Development (optional)
+black
+flake8
+mypy
+pre-commit

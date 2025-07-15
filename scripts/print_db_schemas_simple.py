@@ -23,7 +23,7 @@ if os.path.exists(backend_db_path) and not os.path.exists(db_path):
     db_path = backend_db_path
 
 # Set the database URL before importing
-os.environ['DATABASE_URL'] = f'sqlite:///{db_path}'
+# os.environ['DATABASE_URL'] = f'sqlite:///{db_path}'
 
 # Now import after setting the environment variable
 from data.database import engine

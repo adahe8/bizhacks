@@ -122,7 +122,7 @@ class CustomerSegment(SQLModel, table=True):
     name: str
     description: Optional[str] = Field(default=None)
     criteria: Optional[str] = Field(default=None)  # JSON string of criteria
-    size: Optional[int] = Field(default=0)  # Percentage of total users
+    size: Optional[float] = Field(default=0)  # Percentage of total users
     channel_distribution: Optional[str] = Field(default=None)  # JSON string of channel percentages
     cluster_centroid: Optional[str] = Field(default=None)  # JSON string of centroid features
     created_at: datetime = Field(default_factory=datetime.utcnow)

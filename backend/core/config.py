@@ -3,10 +3,11 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, Dict, Any
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+# from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+# load_dotenv()
 
 class Settings(BaseSettings):
     # Application
@@ -103,7 +104,8 @@ class Settings(BaseSettings):
     CAMPAIGN_VARIANCE_RANGE: tuple = (0.8, 1.2)  # Random multiplier range for each campaign
     
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
+        env_file_encoding = 'utf-8'
         case_sensitive = True
 
 settings = Settings()

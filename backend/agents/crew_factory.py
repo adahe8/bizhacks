@@ -1,5 +1,7 @@
+# backend/agents/crew_factory.py
 from crewai import Crew, Process
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
+from uuid import UUID
 import logging
 import json
 
@@ -11,8 +13,14 @@ from agents.campaign_execution_agent import create_execution_agent, create_execu
 
 logger = logging.getLogger(__name__)
 
+def ensure_str(value: Union[str, UUID]) -> str:
+    """Convert UUID to string if needed"""
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
 def create_campaign_crew(
-    campaign_id: str,
+    campaign_id: Union[str, UUID],
     channel: str,
     product_info: Dict[str, Any],
     market_details: str,
@@ -20,6 +28,9 @@ def create_campaign_crew(
     guardrails: str
 ) -> Crew:
     """Create a crew for campaign execution"""
+    
+    # Ensure campaign_id is string for crew context
+    campaign_id_str = ensure_str(campaign_id)
     
     # Parse market details if it's a JSON string
     if isinstance(market_details, str):
@@ -33,7 +44,7 @@ def create_campaign_crew(
     
     # Create context for tasks
     context = {
-        "campaign_id": campaign_id,
+        "campaign_id": campaign_id_str,
         "product_name": product_info.get("name", "Product"),
         "product_description": product_info.get("description", ""),
         "strategic_goals": strategic_goals,
@@ -59,7 +70,7 @@ def create_campaign_crew(
     
     # Create execution agent and task
     execution_agent = create_execution_agent(channel)
-    execution_task = create_execution_task(execution_agent, channel, campaign_id)
+    execution_task = create_execution_task(execution_agent, channel, campaign_id_str)
     
     # Set task dependencies
     compliance_task.context = [content_task]

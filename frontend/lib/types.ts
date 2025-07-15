@@ -1,4 +1,4 @@
-// frontend/lib/types.ts
+// frontend/lib/types.ts - FIXED VERSION
 
 export interface Company {
   id: string;
@@ -65,14 +65,14 @@ export interface Metric {
 }
 
 export interface CustomerSegment {
-  id: string;
+  id: string;           // ✅ Backend sends UUID serialized as string
   name: string;
   description?: string;
   criteria?: string | any;  // JSON string or parsed object
-  size?: number;
-  channel_distribution?: string | any;  // JSON string or parsed object - ADDED THIS
-  cluster_centroid?: string;  // JSON string - ADDED THIS
-  created_at?: string;  // ADDED THIS
+  size?: number;        // ✅ Backend sends float, frontend receives as number
+  channel_distribution?: string | any;  // JSON string or parsed object
+  cluster_centroid?: string;  // JSON string
+  created_at?: string;
 }
 
 export interface CampaignMetrics {

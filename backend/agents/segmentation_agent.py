@@ -54,7 +54,7 @@ def create_naming_agent() -> Agent:
     try:
         logger.debug(f"Initializing ChatGoogleGenerativeAI with API key: {settings.GEMINI_API_KEY[:10]}...")
         llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
+            model="gemini-2.0-flash",
             google_api_key=settings.GEMINI_API_KEY,
             temperature=0.7
         )

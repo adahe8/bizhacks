@@ -17,7 +17,7 @@ def create_campaign_ideation_agent(
     """Create an agent for campaign idea generation"""
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
+        model="gemini-2.0-flash",
         google_api_key=settings.GEMINI_API_KEY,
         temperature=0.8
     )

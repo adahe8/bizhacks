@@ -17,7 +17,7 @@ class GameStateUpdate(BaseModel):
     is_running: Optional[bool] = None
 
 class GameStateResponse(BaseModel):
-    id: str  # Keep as string for API response
+    id: UUID  # Changed to UUID type
     current_date: datetime
     game_speed: str
     is_running: bool
@@ -27,7 +27,9 @@ class GameStateResponse(BaseModel):
     updated_at: datetime
     
     class Config:
-        # Ensure UUIDs are converted to strings
+        # Allow arbitrary types including UUID
+        arbitrary_types_allowed = True
+        # Ensure UUIDs are serialized as strings in JSON
         json_encoders = {
             UUID: lambda v: str(v)
         }
@@ -57,9 +59,9 @@ async def get_game_state(session: Session = Depends(get_session)):
         session.commit()
         session.refresh(game_state)
     
-    # Convert to response model with proper UUID handling
+    # Now we can pass the UUID directly
     return GameStateResponse(
-        id=game_state.id,  # Convert UUID to string
+        id=game_state.id,  # UUID object can be passed directly now
         current_date=game_state.current_date,
         game_speed=game_state.game_speed,
         is_running=game_state.is_running,
@@ -95,9 +97,9 @@ async def update_game_state(
     session.commit()
     session.refresh(game_state)
     
-    # Convert to response model
+    # UUID object can be passed directly now
     return GameStateResponse(
-        id=game_state.id,  # Convert UUID to string
+        id=game_state.id,  # UUID object can be passed directly now
         current_date=game_state.current_date,
         game_speed=game_state.game_speed,
         is_running=game_state.is_running,

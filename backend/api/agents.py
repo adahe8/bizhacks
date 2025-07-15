@@ -25,7 +25,13 @@ class SegmentResponse(BaseModel):
     name: str
     description: Optional[str]
     criteria: Optional[str]
-    size: Optional[int]
+    size: Optional[float]  # ✅ FIXED: Changed from int to float
+    
+    class Config:
+        # Ensure UUIDs are serialized as strings in JSON
+        json_encoders = {
+            UUID: lambda v: str(v)
+        }
 
 class CampaignIdea(BaseModel):
     name: str
@@ -103,7 +109,7 @@ async def create_customer_segments(
                     name=segment_name,
                     description=segment_desc,
                     criteria=json.dumps(segment_criteria) if isinstance(segment_criteria, dict) else segment_criteria,
-                    size=int(segment_size) if segment_size else 0,
+                    size=float(segment_size) if segment_size else 0.0,  # ✅ FIXED: Ensure float type
                     channel_distribution=json.dumps(segment_channel_dist) if isinstance(segment_channel_dist, dict) else segment_channel_dist
                 )
                 session.add(db_segment)
@@ -124,7 +130,7 @@ async def create_customer_segments(
                         name=seg.name,
                         description=seg.description,
                         criteria=seg.criteria,
-                        size=seg.size
+                        size=seg.size  # Now this will be float, matching the model
                     )
                     for seg in saved_segments
                 ]

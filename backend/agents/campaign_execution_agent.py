@@ -18,7 +18,7 @@ def create_execution_agent(channel: str) -> Agent:
     """Create an agent for campaign execution"""
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
+        model="gemini-2.0-flash",
         google_api_key=settings.GEMINI_API_KEY,
         temperature=0.3
     )

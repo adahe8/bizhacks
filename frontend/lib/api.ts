@@ -1,4 +1,4 @@
-// frontend/lib/api.ts
+// frontend/lib/api.ts - FIXED VERSION
 
 import axios from 'axios';
 import { Campaign, SetupConfig, CustomerSegment, CampaignIdea, Metric, Schedule, OptimizationData } from './types';
@@ -88,7 +88,7 @@ export const agentApi = {
   },
   
   getSegments: async (): Promise<CustomerSegment[]> => {
-    const response = await api.get('/api/agents/segments');
+    const response = await api.get('/api/agents/segments');  // ✅ FIXED: Changed from /segment to /segments
     return response.data;
   },
   

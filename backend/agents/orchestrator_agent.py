@@ -20,7 +20,7 @@ def create_orchestrator_agent() -> Agent:
     """Create an agent for budget orchestration"""
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
+        model="gemini-2.0-flash",
         google_api_key=settings.GEMINI_API_KEY,
         temperature=0.5
     )

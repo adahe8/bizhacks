@@ -1,132 +1,287 @@
+
+# backend/agents/segmentation_agent.py
+
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 import json
 import logging
+import os
+import traceback
+import uuid
+from uuid import UUID
 
-from core.config import settings
-from services.clustering_service import ClusteringService
+from backend.core.config import settings
+from backend.services.clustering_service import ClusteringService
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Add console handler if not already present
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+def ensure_uuid(value: Union[str, UUID]) -> UUID:
+    """Convert string to UUID if needed"""
+    if isinstance(value, str):
+        return UUID(value)
+    return value
+
+def ensure_str(value: Union[str, UUID]) -> str:
+    """Convert UUID to string if needed"""
+    if isinstance(value, UUID):
+        return str(value)
+    return value
 
 def create_naming_agent() -> Agent:
     """Create an agent for naming customer segments"""
+    logger.debug("Creating naming agent...")
     
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.7
-    )
+    # Check if API key is configured
+    if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "your-gemini-api-key-here":
+        error_msg = (
+            "GEMINI_API_KEY not configured. Please set GEMINI_API_KEY in your .env file. "
+            "Get your API key from https://makersuite.google.com/app/apikey"
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
-    agent = Agent(
-        role="Customer Segment Naming Specialist",
-        goal="Create memorable and descriptive names for customer segments based on their characteristics",
-        backstory="""You are an expert in marketing and customer analytics.
-        You excel at creating catchy, descriptive names that capture the essence
-        of customer segments and make them easy to remember and discuss.""",
-        llm=llm,
-        verbose=True,
-        allow_delegation=False
-    )
-    
-    return agent
+    try:
+        logger.debug(f"Initializing ChatGoogleGenerativeAI with API key: {settings.GEMINI_API_KEY[:10]}...")
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-pro",
+            google_api_key=settings.GEMINI_API_KEY,
+            temperature=0.7
+        )
+        
+        agent = Agent(
+            role="Customer Segment Naming Specialist",
+            goal="Create memorable and descriptive names for customer segments based on their characteristics",
+            backstory="""You are an expert in marketing and customer analytics.
+            You excel at creating catchy, descriptive names that capture the essence
+            of customer segments and make them easy to remember and discuss.""",
+            llm=llm,
+            verbose=True,
+            allow_delegation=False
+        )
+        
+        logger.info("Successfully created naming agent")
+        return agent
+    except Exception as e:
+        logger.error(f"Failed to create naming agent: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 async def generate_customer_segments(
-    product_id: str,
+    product_id: Union[str, UUID],
     market_details: Dict[str, Any],
     strategic_goals: str
 ) -> List[Dict[str, Any]]:
     """Generate customer segments using clustering and AI naming"""
+    logger.info("=== Starting generate_customer_segments ===")
     
-    # First, perform k-means clustering
-    clustering_service = ClusteringService()
-    clusters_data = await clustering_service.perform_clustering()
+    # Ensure product_id is a UUID
+    product_uuid = ensure_uuid(product_id)
+    product_id_str = ensure_str(product_uuid)
     
-    if not clusters_data:
-        logger.error("No clusters generated")
-        return []
-    
-    # Get product info for context
-    from sqlmodel import Session
-    from data.database import engine
-    from data.models import Product
-    
-    with Session(engine) as session:
-        product = session.get(Product, product_id)
-        if not product:
-            raise ValueError("Product not found")
-    
-    # Create naming agent
-    agent = create_naming_agent()
-    
-    # Create naming task
-    task = Task(
-        description=f"""
-        Based on the following customer clusters, create memorable names and descriptions for each segment.
-        
-        Product: {product.product_name} - {product.description}
-        Market Context: {json.dumps(market_details)}
-        Strategic Goals: {strategic_goals}
-        
-        Clusters Data:
-        {json.dumps(clusters_data, indent=2)}
-        
-        For each cluster, provide:
-        1. A catchy, memorable name (2-3 words max)
-        2. A brief description (1-2 sentences) that captures their key characteristics
-        
-        Focus on:
-        - Age demographics
-        - Channel preferences (Email, Facebook, Google)
-        - Purchase behavior
-        - Location patterns
-        - Skin type (if relevant)
-        
-        Return as JSON array with objects containing: cluster_id, name, description
-        """,
-        agent=agent,
-        expected_output="JSON array of segment names and descriptions"
-    )
-    
-    # Execute task
-    result = task.execute()
+    logger.info(f"Product ID (UUID): {product_uuid}")
+    logger.info(f"Product ID (str): {product_id_str}")
+    logger.info(f"Market details: {market_details}")
+    logger.info(f"Strategic goals: {strategic_goals}")
     
     try:
-        # Parse the result
-        segment_names = json.loads(result)
+        # First, perform k-means clustering
+        logger.info("Step 1: Starting k-means clustering...")
+        clustering_service = ClusteringService()
+        clusters_data = await clustering_service.perform_clustering()
+        
+        if not clusters_data:
+            logger.error("No clusters generated - check if users data is loaded")
+            logger.info("Checking user count in database...")
+            
+            from sqlmodel import Session, select
+            from data.database import engine
+            from data.models import User
+            
+            with Session(engine) as session:
+                user_count = session.query(User).count()
+                logger.info(f"Found {user_count} users in database")
+                if user_count == 0:
+                    logger.error("No users found in database! Please load demo data.")
+                elif user_count < settings.NUM_CLUSTERS:
+                    logger.error(f"Not enough users ({user_count}) for {settings.NUM_CLUSTERS} clusters")
+            
+            return []
+        
+        logger.info(f"Successfully generated {len(clusters_data)} clusters")
+        for i, cluster in enumerate(clusters_data):
+            logger.debug(f"Cluster {i}: Size={cluster['size']}%, Channels={cluster['channel_distribution']}")
+        
+        # Get product info for context
+        logger.info("Step 2: Fetching product information...")
+        from sqlmodel import Session
+        from data.database import engine
+        from data.models import Product
+        
+        with Session(engine) as session:
+            # Use UUID object for database query
+            product = session.get(Product, product_uuid)
+            if not product:
+                logger.error(f"Product not found with ID: {product_uuid}")
+                raise ValueError("Product not found")
+            
+            logger.info(f"Product: {product.product_name} - {product.description}")
+        
+        # Try to create naming agent and generate names
+        segment_names = []
+        try:
+            logger.info("Step 3: Creating AI naming agent...")
+            # Create naming agent
+            agent = create_naming_agent()
+            
+            logger.info("Step 4: Generating segment names with AI...")
+            # Create naming task
+            task_description = f"""
+            Based on the following customer clusters, create memorable names and descriptions for each segment.
+            
+            Product: {product.product_name} - {product.description}
+            Market Context: {json.dumps(market_details)}
+            Strategic Goals: {strategic_goals}
+            
+            Clusters Data:
+            {json.dumps(clusters_data, indent=2)}
+            
+            For each cluster, provide:
+            1. A catchy, memorable name (2-3 words max)
+            2. A brief description (1-2 sentences) that captures their key characteristics
+            
+            Focus on:
+            - Age demographics
+            - Channel preferences (Email, Facebook, Google)
+            - Purchase behavior
+            - Location patterns
+            - Skin type (if relevant)
+            
+            Return as JSON array with objects containing: cluster_id, name, description
+            
+            Example format:
+            [
+                {{"cluster_id": 0, "name": "Digital Natives", "description": "Young, tech-savvy customers who engage across all channels."}},
+                {{"cluster_id": 1, "name": "Email Loyalists", "description": "Mature customers who prefer email communication and have high purchase frequency."}}
+            ]
+            """
+            
+            task = Task(
+                description=task_description,
+                agent=agent,
+                expected_output="JSON array of segment names and descriptions"
+            )
+            
+            logger.debug("Executing naming task...")
+            # Execute task
+            result = task.execute()
+            logger.debug(f"AI Agent response: {result}")
+            
+            # Parse the result
+            segment_names = json.loads(result)
+            logger.info(f"Successfully generated {len(segment_names)} AI segment names")
+            for name in segment_names:
+                logger.debug(f"Segment {name['cluster_id']}: {name['name']} - {name['description']}")
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI-generated segment names: {str(e)}")
+            logger.error(f"Raw result: {result if 'result' in locals() else 'No result'}")
+            segment_names = []
+        except Exception as e:
+            logger.error(f"Error generating segment names with AI: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.info("Falling back to default segment names")
+            segment_names = []
+        
+        # If AI naming failed, use default names
+        if not segment_names:
+            logger.info("Using default segment naming...")
+            segment_names = generate_default_segment_names(clusters_data)
+            logger.info(f"Generated {len(segment_names)} default segment names")
         
         # Save clusters with names
+        logger.info("Step 5: Saving segments to database...")
         saved_segments = await clustering_service.save_clusters(clusters_data, segment_names)
+        logger.info(f"Successfully saved {len(saved_segments)} segments to database")
         
-        # Format response
+        # Format response - ensure all IDs are strings for JSON serialization
         segments = []
         for segment in saved_segments:
-            segments.append({
-                "id": str(segment.id),
+            segment_data = {
+                "id": ensure_str(segment.id),
                 "name": segment.name,
                 "description": segment.description,
                 "size": segment.size,
                 "channel_distribution": json.loads(segment.channel_distribution) if segment.channel_distribution else {},
                 "criteria": json.loads(segment.criteria) if segment.criteria else {}
-            })
+            }
+            segments.append(segment_data)
+            logger.debug(f"Formatted segment: {segment_data['name']} (ID: {segment_data['id']})")
         
-        logger.info(f"Generated and saved {len(segments)} customer segments")
+        logger.info(f"=== Completed generate_customer_segments: Generated {len(segments)} segments ===")
         return segments
         
-    except json.JSONDecodeError:
-        logger.error("Failed to parse segment names")
-        # Fallback: save with default names
-        default_names = [
-            {"cluster_id": i, "name": f"Segment {i+1}", "description": f"Customer segment {i+1}"}
-            for i in range(len(clusters_data))
-        ]
-        saved_segments = await clustering_service.save_clusters(clusters_data, default_names)
+    except Exception as e:
+        logger.error(f"Fatal error in generate_customer_segments: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+def generate_default_segment_names(clusters_data: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Generate default segment names based on cluster characteristics"""
+    logger.debug("Generating default segment names...")
+    default_names = []
+    
+    for i, cluster in enumerate(clusters_data):
+        characteristics = cluster.get("characteristics", {})
+        channel_dist = cluster.get("channel_distribution", {})
         
-        return [{
-            "id": str(seg.id),
-            "name": seg.name,
-            "description": seg.description,
-            "size": seg.size,
-            "channel_distribution": json.loads(seg.channel_distribution) if seg.channel_distribution else {},
-            "criteria": json.loads(seg.criteria) if seg.criteria else {}
-        } for seg in saved_segments]
+        # Determine primary channel
+        primary_channel = max(channel_dist.items(), key=lambda x: x[1])[0] if channel_dist else "multi"
+        channel_name = {
+            "email": "Email",
+            "facebook": "Social",
+            "google_seo": "Search",
+            "multi": "Multi-Channel"
+        }.get(primary_channel, "Digital")
+        
+        # Determine age group
+        avg_age = characteristics.get("avg_age", 30)
+        if avg_age < 25:
+            age_group = "Young"
+        elif avg_age < 35:
+            age_group = "Millennial"
+        elif avg_age < 50:
+            age_group = "Mid-Age"
+        else:
+            age_group = "Mature"
+        
+        # Create name and description
+        name = f"{age_group} {channel_name} Users"
+        description = f"Customers aged {characteristics.get('age_range', 'various')} who primarily engage via {primary_channel}. "
+        
+        if characteristics.get("avg_purchases", 0) > 2:
+            description += "High purchase frequency."
+        elif characteristics.get("avg_purchases", 0) > 0:
+            description += "Regular buyers."
+        else:
+            description += "New or potential customers."
+        
+        default_names.append({
+            "cluster_id": i,
+            "name": name,
+            "description": description
+        })
+        
+        logger.debug(f"Default name for cluster {i}: {name}")
+    
+    return default_names

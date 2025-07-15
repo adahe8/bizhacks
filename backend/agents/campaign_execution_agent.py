@@ -1,12 +1,13 @@
+# backend/agents/campaign_execution_agent.py
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import json
 import logging
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from core.config import settings
+from backend.core.config import settings
 from sqlmodel import Session
 from data.database import engine
 from data.models import ContentAsset, Campaign
@@ -36,13 +37,16 @@ def create_execution_agent(channel: str) -> Agent:
     
     return agent
 
-def create_execution_task(agent: Agent, channel: str, campaign_id: str) -> Task:
+def create_execution_task(agent: Agent, channel: str, campaign_id: Union[str, UUID]) -> Task:
     """Create task for campaign execution"""
+    # Ensure campaign_id is string for task description
+    campaign_id_str = ensure_str(campaign_id)
+    
     task = Task(
         description=f"""
         Execute the approved campaign content on {channel} platform.
         
-        Campaign ID: {campaign_id}
+        Campaign ID: {campaign_id_str}
         
         Steps to perform:
         1. Verify the content has been approved by compliance
@@ -61,11 +65,14 @@ def create_execution_task(agent: Agent, channel: str, campaign_id: str) -> Task:
     return task
 
 async def execute_campaign_content(
-    campaign_id: str,
+    campaign_id: Union[str, UUID],
     content: Dict[str, Any],
     channel: str
 ) -> Dict[str, Any]:
     """Execute campaign by publishing content to the specified channel"""
+    
+    # Ensure campaign_id is UUID for database operations
+    campaign_uuid = ensure_uuid(campaign_id)
     
     # Import the appropriate client based on channel
     if channel == "facebook":
@@ -86,13 +93,13 @@ async def execute_campaign_content(
         
         # Store content asset in database
         with Session(engine) as session:
-            campaign = session.get(Campaign, campaign_id)
+            campaign = session.get(Campaign, campaign_uuid)
             if not campaign:
-                raise ValueError("Campaign not found")
+                raise ValueError(f"Campaign not found: {campaign_uuid}")
             
             # Create content asset record
             asset = ContentAsset(
-                campaign_id=campaign_id,
+                campaign_id=campaign_uuid,
                 platform=channel,
                 asset_type="mixed",  # Could be text, image, video based on content
                 copy_text=json.dumps(content),
@@ -108,7 +115,7 @@ async def execute_campaign_content(
             
             return {
                 "status": "success",
-                "asset_id": str(asset.id),
+                "asset_id": ensure_str(asset.id),
                 "published_at": asset.published_at.isoformat(),
                 "platform_response": publish_result
             }

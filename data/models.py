@@ -1,3 +1,4 @@
+# data/models.py
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
 from datetime import datetime, date
@@ -36,7 +37,7 @@ class User(SQLModel, table=True):
     """User/Customer model"""
     __tablename__ = "users"
     
-    id: str = Field(primary_key=True)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)  # Changed to UUID
     age: Optional[int] = Field(default=None)
     location: Optional[str] = Field(default=None)
     skin_type: Optional[str] = Field(default=None)

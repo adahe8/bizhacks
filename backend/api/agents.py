@@ -1,8 +1,11 @@
+# backend/api/agents.py
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List, Optional
 from uuid import UUID
 from pydantic import BaseModel
+import logging
+import traceback
 
 from data.database import get_session
 from data.models import CustomerSegment, Campaign, SetupConfiguration
@@ -12,6 +15,10 @@ from agents.orchestrator_agent import rebalance_budgets
 import json
 
 router = APIRouter()
+
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 class SegmentResponse(BaseModel):
     id: UUID
@@ -44,57 +51,106 @@ async def create_customer_segments(
     session: Session = Depends(get_session)
 ):
     """Generate customer segments based on setup configuration"""
-    # Get active setup
-    setup = session.exec(
-        select(SetupConfiguration).where(SetupConfiguration.is_active == True)
-    ).first()
+    logger.info("=== Starting customer segment generation ===")
     
-    if not setup:
-        raise HTTPException(status_code=400, detail="No active setup configuration found")
-    
-    # Generate segments
     try:
-        segments = await generate_customer_segments(
-            product_id=str(setup.product_id),
-            market_details=json.loads(setup.market_details) if setup.market_details else {},
-            strategic_goals=setup.strategic_goals
-        )
+        # Get active setup
+        logger.debug("Fetching active setup configuration...")
+        setup = session.exec(
+            select(SetupConfiguration).where(SetupConfiguration.is_active == True)
+        ).first()
         
-        # Save segments to database
-        saved_segments = []
-        for segment in segments:
-            db_segment = CustomerSegment(
-                name=segment["name"],
-                description=segment["description"],
-                criteria=json.dumps(segment["criteria"]),
-                size=segment.get("size", 0)
-            )
-            session.add(db_segment)
-            saved_segments.append(db_segment)
+        if not setup:
+            logger.error("No active setup configuration found")
+            raise HTTPException(status_code=400, detail="No active setup configuration found")
         
+        logger.info(f"Found active setup: ID={setup.id}, Product={setup.product_id}, Budget=${setup.monthly_budget}")
+        
+        # Delete existing segments before generating new ones
+        logger.debug("Deleting existing customer segments...")
+        existing_segments = session.exec(select(CustomerSegment)).all()
+        for segment in existing_segments:
+            session.delete(segment)
         session.commit()
+        logger.info(f"Deleted {len(existing_segments)} existing segments")
         
-        return {
-            "message": "Customer segments generated successfully",
-            "segments": [
-                SegmentResponse(
-                    id=seg.id,
-                    name=seg.name,
-                    description=seg.description,
-                    criteria=seg.criteria,
-                    size=seg.size
+        # Generate segments
+        logger.info("Calling generate_customer_segments...")
+        try:
+            segments = await generate_customer_segments(
+                product_id=str(setup.product_id),
+                market_details=json.loads(setup.market_details) if setup.market_details else {},
+                strategic_goals=setup.strategic_goals or ""
+            )
+            
+            logger.info(f"Generated {len(segments)} segments from segmentation agent")
+            
+            # Save segments to database
+            saved_segments = []
+            for i, segment in enumerate(segments):
+                logger.debug(f"Processing segment {i+1}: {segment.get('name', 'Unknown')}")
+                
+                # Extract segment data
+                segment_name = segment.get("name", f"Segment {i+1}")
+                segment_desc = segment.get("description", "")
+                segment_size = segment.get("size", 0)
+                segment_criteria = segment.get("criteria", {})
+                segment_channel_dist = segment.get("channel_distribution", {})
+                
+                logger.debug(f"Segment data - Name: {segment_name}, Size: {segment_size}%, Channels: {segment_channel_dist}")
+                
+                db_segment = CustomerSegment(
+                    name=segment_name,
+                    description=segment_desc,
+                    criteria=json.dumps(segment_criteria) if isinstance(segment_criteria, dict) else segment_criteria,
+                    size=int(segment_size) if segment_size else 0,
+                    channel_distribution=json.dumps(segment_channel_dist) if isinstance(segment_channel_dist, dict) else segment_channel_dist
                 )
-                for seg in saved_segments
-            ]
-        }
-        
+                session.add(db_segment)
+                saved_segments.append(db_segment)
+            
+            session.commit()
+            logger.info(f"Successfully saved {len(saved_segments)} segments to database")
+            
+            # Refresh to get IDs
+            for segment in saved_segments:
+                session.refresh(segment)
+            
+            response_data = {
+                "message": "Customer segments generated successfully",
+                "segments": [
+                    SegmentResponse(
+                        id=seg.id,
+                        name=seg.name,
+                        description=seg.description,
+                        criteria=seg.criteria,
+                        size=seg.size
+                    )
+                    for seg in saved_segments
+                ]
+            }
+            
+            logger.info("=== Customer segment generation completed successfully ===")
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Error in generate_customer_segments: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error generating segments: {str(e)}")
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating segments: {str(e)}")
+        logger.error(f"Unexpected error in create_customer_segments: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @router.get("/segments", response_model=List[SegmentResponse])
 async def get_customer_segments(session: Session = Depends(get_session)):
     """Get all customer segments"""
+    logger.debug("Fetching all customer segments...")
     segments = session.exec(select(CustomerSegment)).all()
+    logger.info(f"Retrieved {len(segments)} customer segments")
     return segments
 
 @router.post("/create-campaigns", response_model=List[CampaignIdea])
@@ -160,8 +216,8 @@ async def execute_campaign_now(
         raise HTTPException(status_code=400, detail="Campaign must be active to execute")
     
     # Execute campaign in background
-    from services.campaign_service import execute_campaign
-    background_tasks.add_task(execute_campaign, str(campaign_id))
+    from backend.services.campaign_service import execute_campaign
+    background_tasks.add_task(execute_campaign, campaign_id)
     
     return {"message": f"Campaign {campaign.name} execution started"}
 

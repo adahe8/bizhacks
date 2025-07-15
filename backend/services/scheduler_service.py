@@ -1,3 +1,4 @@
+# backend/services/scheduler_service.py
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
@@ -27,8 +28,8 @@ class SchedulerService:
             
             return [
                 {
-                    "schedule_id": str(schedule.id),
-                    "campaign_id": str(schedule.campaign_id),
+                    "schedule_id": schedule.id,
+                    "campaign_id": schedule.campaign_id,
                     "campaign_name": schedule.campaign.name if schedule.campaign else "Unknown",
                     "scheduled_time": schedule.scheduled_time,
                     "job_id": schedule.job_id
@@ -66,12 +67,12 @@ class SchedulerService:
                 
                 # Schedule with APScheduler
                 schedule_campaign_execution(
-                    str(schedule.campaign_id),
+                    schedule.campaign_id,
                     new_time,
                     new_job_id
                 )
                 
-                rescheduled.append(str(schedule.campaign_id))
+                rescheduled.append(schedule.campaign_id)
                 
                 # Mark old schedule as rescheduled
                 schedule.status = "rescheduled"

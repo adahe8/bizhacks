@@ -1,11 +1,13 @@
+# backend/agents/metrics_gather_agent.py
 from crewai import Agent
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 from datetime import datetime
 from sqlmodel import Session, select
 import logging
+from uuid import UUID
 
-from core.config import settings
+from backend.core.config import settings
 from data.database import engine
 from data.models import Campaign, Metric, ContentAsset
 
@@ -48,7 +50,7 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
             try:
                 # Collect metrics for this campaign
                 metrics = await collect_campaign_metrics(
-                    campaign_id=str(campaign.id),
+                    campaign_id=campaign.id,
                     channel=campaign.channel
                 )
                 
@@ -67,7 +69,7 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
                     session.add(metric)
                 
                 results.append({
-                    "campaign_id": str(campaign.id),
+                    "campaign_id": ensure_str(campaign.id),
                     "campaign_name": campaign.name,
                     "metrics_collected": len(metrics)
                 })
@@ -75,7 +77,7 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
             except Exception as e:
                 logger.error(f"Error collecting metrics for campaign {campaign.id}: {str(e)}")
                 results.append({
-                    "campaign_id": str(campaign.id),
+                    "campaign_id": ensure_str(campaign.id),
                     "campaign_name": campaign.name,
                     "error": str(e)
                 })
@@ -85,8 +87,11 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
     logger.info(f"Collected metrics for {len(results)} campaigns")
     return results
 
-async def collect_campaign_metrics(campaign_id: str, channel: str) -> List[Dict[str, Any]]:
+async def collect_campaign_metrics(campaign_id: Union[str, UUID], channel: str) -> List[Dict[str, Any]]:
     """Collect metrics for a specific campaign"""
+    
+    # Ensure campaign_id is UUID for database queries
+    campaign_uuid = ensure_uuid(campaign_id)
     
     # Import the appropriate client based on channel
     if channel == "facebook":
@@ -105,12 +110,12 @@ async def collect_campaign_metrics(campaign_id: str, channel: str) -> List[Dict[
     with Session(engine) as session:
         assets = session.exec(
             select(ContentAsset)
-            .where(ContentAsset.campaign_id == campaign_id)
+            .where(ContentAsset.campaign_id == campaign_uuid)
             .where(ContentAsset.status == "published")
         ).all()
         
         if not assets:
-            logger.warning(f"No published assets found for campaign {campaign_id}")
+            logger.warning(f"No published assets found for campaign {campaign_uuid}")
             return []
         
         # Collect metrics for each asset
@@ -119,7 +124,7 @@ async def collect_campaign_metrics(campaign_id: str, channel: str) -> List[Dict[
             try:
                 # Get metrics from the platform
                 asset_metrics = await client.get_metrics(
-                    asset_id=str(asset.id),
+                    asset_id=ensure_str(asset.id),
                     published_at=asset.published_at
                 )
                 all_metrics.append(asset_metrics)

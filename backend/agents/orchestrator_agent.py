@@ -1,14 +1,16 @@
+# backend/agents/orchestrator_agent.py
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
 import numpy as np
 from scipy.optimize import minimize
 import json
 import logging
+from uuid import UUID
 
-from core.config import settings
+from backend.core.config import settings
 from data.database import engine
 from data.models import Campaign, Metric
 
@@ -35,54 +37,6 @@ def create_orchestrator_agent() -> Agent:
     )
     
     return agent
-
-def calculate_performance_score(metrics: List[Metric]) -> float:
-    """Calculate performance score from metrics"""
-    if not metrics:
-        return 0.5  # Neutral score for new campaigns
-    
-    # Calculate weighted performance score
-    total_impressions = sum(m.impressions or 0 for m in metrics)
-    total_clicks = sum(m.clicks or 0 for m in metrics)
-    avg_engagement = sum(m.engagement_rate or 0 for m in metrics) / len(metrics)
-    avg_conversion = sum(m.conversion_rate or 0 for m in metrics) / len(metrics)
-    avg_cpa = sum(m.cpa or 0 for m in metrics) / len(metrics)
-    
-    # Normalize CPA (lower is better)
-    normalized_cpa = 1 / (1 + avg_cpa / 100) if avg_cpa > 0 else 0.5
-    
-    # Calculate CTR
-    ctr = total_clicks / total_impressions if total_impressions > 0 else 0
-    
-    # Weighted score
-    score = (
-        0.2 * ctr +
-        0.3 * avg_engagement +
-        0.3 * avg_conversion +
-        0.2 * normalized_cpa
-    )
-    
-    return score
-
-def optimization_objective(budgets: np.ndarray, performance_scores: np.ndarray, total_budget: float) -> float:
-    """Objective function to maximize performance while penalizing uneven distribution"""
-    # Ensure budgets sum to total budget
-    budgets = budgets * (total_budget / np.sum(budgets))
-    
-    # Performance component (negative because we minimize)
-    performance = -np.sum(budgets * performance_scores)
-    
-    # Evenness penalty (standard deviation of budget distribution)
-    mean_budget = total_budget / len(budgets)
-    evenness_penalty = np.std(budgets - mean_budget) * settings.BUDGET_EVENNESS_PENALTY
-    
-    # Total objective
-    objective = (
-        settings.PERFORMANCE_WEIGHT * performance + 
-        settings.EVENNESS_WEIGHT * evenness_penalty
-    )
-    
-    return objective
 
 async def rebalance_budgets() -> List[Dict[str, Any]]:
     """Rebalance budgets across all active campaigns using optimization"""
@@ -167,7 +121,7 @@ async def rebalance_budgets() -> List[Dict[str, Any]]:
                     reason += " - Decreased to reallocate to better performers"
                 
                 rebalance_results.append({
-                    "campaign_id": campaign.id,
+                    "campaign_id": ensure_str(campaign.id),
                     "campaign_name": campaign.name,
                     "old_budget": old_budget,
                     "new_budget": new_budget,
@@ -179,3 +133,51 @@ async def rebalance_budgets() -> List[Dict[str, Any]]:
         session.commit()
         
         return rebalance_results
+
+def calculate_performance_score(metrics: List[Metric]) -> float:
+    """Calculate performance score from metrics"""
+    if not metrics:
+        return 0.5  # Neutral score for new campaigns
+    
+    # Calculate weighted performance score
+    total_impressions = sum(m.impressions or 0 for m in metrics)
+    total_clicks = sum(m.clicks or 0 for m in metrics)
+    avg_engagement = sum(m.engagement_rate or 0 for m in metrics) / len(metrics)
+    avg_conversion = sum(m.conversion_rate or 0 for m in metrics) / len(metrics)
+    avg_cpa = sum(m.cpa or 0 for m in metrics) / len(metrics)
+    
+    # Normalize CPA (lower is better)
+    normalized_cpa = 1 / (1 + avg_cpa / 100) if avg_cpa > 0 else 0.5
+    
+    # Calculate CTR
+    ctr = total_clicks / total_impressions if total_impressions > 0 else 0
+    
+    # Weighted score
+    score = (
+        0.2 * ctr +
+        0.3 * avg_engagement +
+        0.3 * avg_conversion +
+        0.2 * normalized_cpa
+    )
+    
+    return score
+
+def optimization_objective(budgets: np.ndarray, performance_scores: np.ndarray, total_budget: float) -> float:
+    """Objective function to maximize performance while penalizing uneven distribution"""
+    # Ensure budgets sum to total budget
+    budgets = budgets * (total_budget / np.sum(budgets))
+    
+    # Performance component (negative because we minimize)
+    performance = -np.sum(budgets * performance_scores)
+    
+    # Evenness penalty (standard deviation of budget distribution)
+    mean_budget = total_budget / len(budgets)
+    evenness_penalty = np.std(budgets - mean_budget) * settings.BUDGET_EVENNESS_PENALTY
+    
+    # Total objective
+    objective = (
+        settings.PERFORMANCE_WEIGHT * performance + 
+        settings.EVENNESS_WEIGHT * evenness_penalty
+    )
+    
+    return objective

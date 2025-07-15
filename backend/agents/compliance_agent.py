@@ -4,7 +4,7 @@ from typing import Dict, Any
 import json
 import logging
 
-from core.config import settings
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 

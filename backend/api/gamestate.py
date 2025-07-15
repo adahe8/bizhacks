@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 from typing import Optional, List
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from data.database import get_session
 from data.models import GameState, Metric, Campaign
@@ -16,7 +17,7 @@ class GameStateUpdate(BaseModel):
     is_running: Optional[bool] = None
 
 class GameStateResponse(BaseModel):
-    id: str
+    id: str  # Keep as string for API response
     current_date: datetime
     game_speed: str
     is_running: bool
@@ -24,6 +25,12 @@ class GameStateResponse(BaseModel):
     total_reach_non_optimal: float
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        # Ensure UUIDs are converted to strings
+        json_encoders = {
+            UUID: lambda v: str(v)
+        }
 
 class OptimizationDataPoint(BaseModel):
     date: str
@@ -50,7 +57,17 @@ async def get_game_state(session: Session = Depends(get_session)):
         session.commit()
         session.refresh(game_state)
     
-    return game_state
+    # Convert to response model with proper UUID handling
+    return GameStateResponse(
+        id=game_state.id,  # Convert UUID to string
+        current_date=game_state.current_date,
+        game_speed=game_state.game_speed,
+        is_running=game_state.is_running,
+        total_reach_optimal=game_state.total_reach_optimal,
+        total_reach_non_optimal=game_state.total_reach_non_optimal,
+        created_at=game_state.created_at,
+        updated_at=game_state.updated_at
+    )
 
 @router.put("/current", response_model=GameStateResponse)
 async def update_game_state(
@@ -78,7 +95,17 @@ async def update_game_state(
     session.commit()
     session.refresh(game_state)
     
-    return game_state
+    # Convert to response model
+    return GameStateResponse(
+        id=game_state.id,  # Convert UUID to string
+        current_date=game_state.current_date,
+        game_speed=game_state.game_speed,
+        is_running=game_state.is_running,
+        total_reach_optimal=game_state.total_reach_optimal,
+        total_reach_non_optimal=game_state.total_reach_non_optimal,
+        created_at=game_state.created_at,
+        updated_at=game_state.updated_at
+    )
 
 @router.post("/reset")
 async def reset_game_state(session: Session = Depends(get_session)):

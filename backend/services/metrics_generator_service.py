@@ -3,15 +3,28 @@ import random
 import numpy as np
 from sqlmodel import Session, select
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Union
+from uuid import UUID
 import json
 import logging
 
 from data.database import engine
 from data.models import Campaign, CampaignMetrics, Metric
-from core.config import settings
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+def ensure_uuid(value: Union[str, UUID]) -> UUID:
+    """Convert string to UUID if needed"""
+    if isinstance(value, str):
+        return UUID(value)
+    return value
+
+def ensure_str(value: Union[str, UUID]) -> str:
+    """Convert UUID to string if needed"""
+    if isinstance(value, UUID):
+        return str(value)
+    return value
 
 class MetricsGeneratorService:
     """Service for generating stochastic campaign metrics"""
@@ -19,21 +32,23 @@ class MetricsGeneratorService:
     def __init__(self):
         self.channel_configs = settings.CHANNEL_METRICS
         
-    def get_campaign_metrics_config(self, campaign_id: str) -> Dict[str, Any]:
+    def get_campaign_metrics_config(self, campaign_id: Union[str, UUID]) -> Dict[str, Any]:
         """Get or create unique metrics configuration for a campaign"""
+        campaign_uuid = ensure_uuid(campaign_id)
+        
         with Session(engine) as session:
             # Check if metrics config exists
             config = session.exec(
-                select(CampaignMetrics).where(CampaignMetrics.campaign_id == campaign_id)
+                select(CampaignMetrics).where(CampaignMetrics.campaign_id == campaign_uuid)
             ).first()
             
             if config:
                 return json.loads(config.metrics_config)
             
             # Create new config with unique variance
-            campaign = session.get(Campaign, campaign_id)
+            campaign = session.get(Campaign, campaign_uuid)
             if not campaign:
-                raise ValueError("Campaign not found")
+                raise ValueError(f"Campaign not found: {campaign_uuid}")
             
             # Get base metrics for channel
             base_metrics = self.channel_configs.get(campaign.channel, {})
@@ -52,7 +67,7 @@ class MetricsGeneratorService:
             
             # Save configuration
             campaign_metrics = CampaignMetrics(
-                campaign_id=campaign_id,
+                campaign_id=campaign_uuid,
                 channel=campaign.channel,
                 metrics_config=json.dumps(unique_config)
             )
@@ -61,7 +76,7 @@ class MetricsGeneratorService:
             
             return unique_config
     
-    def generate_metrics(self, campaign_id: str, spend: float) -> Dict[str, float]:
+    def generate_metrics(self, campaign_id: Union[str, UUID], spend: float) -> Dict[str, float]:
         """Generate stochastic metrics for a campaign"""
         config = self.get_campaign_metrics_config(campaign_id)
         
@@ -96,11 +111,13 @@ class MetricsGeneratorService:
         
         return generated_metrics
     
-    def _update_metrics_config(self, campaign_id: str, config: Dict[str, Any]):
+    def _update_metrics_config(self, campaign_id: Union[str, UUID], config: Dict[str, Any]):
         """Update metrics configuration"""
+        campaign_uuid = ensure_uuid(campaign_id)
+        
         with Session(engine) as session:
             campaign_metrics = session.exec(
-                select(CampaignMetrics).where(CampaignMetrics.campaign_id == campaign_id)
+                select(CampaignMetrics).where(CampaignMetrics.campaign_id == campaign_uuid)
             ).first()
             
             if campaign_metrics:
@@ -132,15 +149,17 @@ class MetricsGeneratorService:
             
         return impressions * 0.01  # Default
     
-    async def generate_and_store_metrics(self, campaign_id: str) -> Metric:
+    async def generate_and_store_metrics(self, campaign_id: Union[str, UUID]) -> Metric:
         """Generate metrics and store in database"""
+        campaign_uuid = ensure_uuid(campaign_id)
+        
         with Session(engine) as session:
-            campaign = session.get(Campaign, campaign_id)
+            campaign = session.get(Campaign, campaign_uuid)
             if not campaign:
-                raise ValueError("Campaign not found")
+                raise ValueError(f"Campaign not found: {campaign_uuid}")
             
             # Generate metrics
-            metrics_values = self.generate_metrics(campaign_id, campaign.budget)
+            metrics_values = self.generate_metrics(campaign_uuid, campaign.budget)
             
             # Calculate impressions based on budget
             impressions = int(campaign.budget * random.uniform(100, 200))
@@ -150,7 +169,7 @@ class MetricsGeneratorService:
             
             # Store metric
             metric = Metric(
-                campaign_id=campaign_id,
+                campaign_id=campaign_uuid,
                 platform=campaign.channel,
                 impressions=impressions,
                 clicks=int(impressions * metrics_values.get("click_through_rate", 0.03)),

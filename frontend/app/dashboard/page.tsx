@@ -1,8 +1,7 @@
 // frontend/app/dashboard/page.tsx
-
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { campaignApi, metricsApi, agentApi, setupApi, gameStateApi } from '@/lib/api';
 import MetricsVisualization from '@/components/MetricsVisualization';
@@ -29,7 +28,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     checkSetupAndLoadData();
-  }, []);
+  }, []); // Only run once on mount
 
   const checkSetupAndLoadData = async () => {
     try {
@@ -80,7 +79,7 @@ export default function Dashboard() {
         campaignApi.list({ status: 'active' }),
         metricsApi.getChannelMetrics(7),
         agentApi.getSegments(),
-        gameStateApi.getOptimizationData(30) // Get real optimization data
+        gameStateApi.getOptimizationData(30)
       ]);
 
       setCampaigns(campaignsData);
@@ -108,13 +107,14 @@ export default function Dashboard() {
     setCampaigns(updatedCampaigns);
   };
 
-  const handleDateChange = (date: Date) => {
+  // Use useCallback to prevent function recreation on every render
+  const handleDateChange = useCallback((date: Date) => {
     setGameDate(date);
-    // Optionally reload optimization data when date changes
-    refreshOptimizationData();
-  };
+    // Don't automatically refresh data on date change to avoid loops
+  }, []);
 
-  const refreshOptimizationData = async () => {
+  // Separate function for manual refresh
+  const refreshOptimizationData = useCallback(async () => {
     try {
       const optimizationData = await gameStateApi.getOptimizationData(30);
       const processedOptData = optimizationData.map((item: any) => ({
@@ -126,7 +126,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error refreshing optimization data:', error);
     }
-  };
+  }, []); // No dependencies - this function doesn't rely on any state
 
   if (loading) {
     return (
@@ -269,9 +269,15 @@ export default function Dashboard() {
           </button>
           <button
             onClick={async () => {
-              await agentApi.generateSegments();
-              const newSegments = await agentApi.getSegments();
-              setSegments(newSegments);
+              try {
+                await agentApi.generateSegments();
+                const newSegments = await agentApi.getSegments();
+                setSegments(newSegments);
+                alert('Customer segments updated successfully');
+              } catch (error) {
+                console.error('Error generating segments:', error);
+                alert('Failed to generate segments. Check your GEMINI_API_KEY configuration.');
+              }
             }}
             className="btn-outline"
           >

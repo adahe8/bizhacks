@@ -1,3 +1,4 @@
+# backend/api/campaigns.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -6,7 +7,7 @@ from datetime import datetime
 
 from data.database import get_session
 from data.models import Campaign, Product, ContentAsset
-from services.campaign_service import CampaignService
+from backend.services.campaign_service import CampaignService
 from pydantic import BaseModel
 
 router = APIRouter()

@@ -1,3 +1,4 @@
+# backend/core/scheduler.py
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
@@ -35,7 +36,7 @@ scheduler = AsyncIOScheduler(
 
 def schedule_campaign_execution(campaign_id: str, schedule_time, job_id: str) -> str:
     """Schedule a campaign execution"""
-    from services.campaign_service import execute_campaign
+    from backend.services.campaign_service import execute_campaign
     
     job = scheduler.add_job(
         execute_campaign,
@@ -52,7 +53,7 @@ def schedule_campaign_execution(campaign_id: str, schedule_time, job_id: str) ->
 
 def schedule_recurring_campaign(campaign_id: str, frequency: str, job_id: str) -> str:
     """Schedule a recurring campaign"""
-    from services.campaign_service import execute_campaign
+    from backend.services.campaign_service import execute_campaign
     
     # Map frequency to APScheduler interval
     interval_map = {

@@ -16,10 +16,38 @@ export default function SpendOptimizationChart({ data }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    if (!svgRef.current || data.length === 0) return;
+    if (!svgRef.current) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
+
+    // Check if we have meaningful data
+    const hasData = data.length > 0 && data.some(d => d.optimal > 0 || d.nonOptimal > 0);
+    
+    if (!hasData) {
+      // Show empty state
+      const width = 600;
+      const height = 300;
+      
+      svg.append('text')
+        .attr('x', width / 2)
+        .attr('y', height / 2)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .style('font-size', '16px')
+        .style('fill', '#6b7280')
+        .text('No optimization data available yet');
+      
+      svg.append('text')
+        .attr('x', width / 2)
+        .attr('y', height / 2 + 25)
+        .attr('text-anchor', 'middle')
+        .style('font-size', '14px')
+        .style('fill', '#9ca3af')
+        .text('Run campaigns to see performance metrics');
+      
+      return;
+    }
 
     const width = 600;
     const height = 300;
@@ -127,25 +155,24 @@ export default function SpendOptimizationChart({ data }: Props) {
     // Add performance gain
     if (data.length > 0) {
       const lastPoint = data[data.length - 1];
-      const gain = ((lastPoint.optimal - lastPoint.nonOptimal) / lastPoint.nonOptimal * 100).toFixed(1);
-      
-      svg.append('text')
-        .attr('x', width / 2)
-        .attr('y', height - 5)
-        .attr('text-anchor', 'middle')
-        .style('font-size', '14px')
-        .style('font-weight', 'bold')
-        .style('fill', '#059669')
-        .text(`+${gain}% Performance Gain`);
+      if (lastPoint.optimal > 0 && lastPoint.nonOptimal > 0) {
+        const gain = ((lastPoint.optimal - lastPoint.nonOptimal) / lastPoint.nonOptimal * 100).toFixed(1);
+        
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', height - 5)
+          .attr('text-anchor', 'middle')
+          .style('font-size', '14px')
+          .style('font-weight', 'bold')
+          .style('fill', '#059669')
+          .text(`+${gain}% Performance Gain`);
+      }
     }
 
   }, [data]);
 
   return (
-    <div className="card">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        Optimization Performance
-      </h3>
+    <div className="w-full">
       <svg ref={svgRef} width="600" height="300" className="w-full max-w-full"></svg>
     </div>
   );

@@ -1,3 +1,5 @@
+# backend/api/schedules.py
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -78,13 +80,13 @@ async def create_schedule(
     # Schedule with APScheduler
     if schedule_data.recurring and campaign.frequency:
         schedule_recurring_campaign(
-            str(campaign.id),
+            campaign.id,
             campaign.frequency,
             job_id
         )
     else:
         schedule_campaign_execution(
-            str(campaign.id),
+            campaign.id,
             schedule_data.scheduled_time,
             job_id
         )
@@ -123,7 +125,7 @@ async def update_schedule(
     if schedule_update.scheduled_time and schedule.status == "pending" and schedule.job_id:
         cancel_job(schedule.job_id)
         schedule_campaign_execution(
-            str(schedule.campaign_id),
+            schedule.campaign_id,
             schedule_update.scheduled_time,
             schedule.job_id
         )

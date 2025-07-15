@@ -1,17 +1,30 @@
+# backend/services/campaign_service.py
 from sqlmodel import Session, select
 from uuid import UUID
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 import logging
 
 from data.database import engine
 from data.models import Campaign, Schedule, SetupConfiguration
 from agents.crew_factory import create_campaign_crew
 from core.scheduler import schedule_recurring_campaign
-from services.crew_service import CrewService
-from services.metrics_generator_service import MetricsGeneratorService
+from backend.services.crew_service import CrewService
+from backend.services.metrics_generator_service import MetricsGeneratorService
 
 logger = logging.getLogger(__name__)
+
+def ensure_uuid(value: Union[str, UUID]) -> UUID:
+    """Convert string to UUID if needed"""
+    if isinstance(value, str):
+        return UUID(value)
+    return value
+
+def ensure_str(value: Union[str, UUID]) -> str:
+    """Convert UUID to string if needed"""
+    if isinstance(value, UUID):
+        return str(value)
+    return value
 
 class CampaignService:
     def __init__(self, session: Session):
@@ -19,9 +32,11 @@ class CampaignService:
         self.crew_service = CrewService()
         self.metrics_service = MetricsGeneratorService()
     
-    async def activate_campaign(self, campaign_id: UUID) -> Campaign:
+    async def activate_campaign(self, campaign_id: Union[str, UUID]) -> Campaign:
         """Activate a campaign and schedule it"""
-        campaign = self.session.get(Campaign, campaign_id)
+        campaign_uuid = ensure_uuid(campaign_id)
+        
+        campaign = self.session.get(Campaign, campaign_uuid)
         if not campaign:
             raise ValueError("Campaign not found")
         
@@ -34,16 +49,16 @@ class CampaignService:
         
         # Schedule recurring execution based on frequency
         if campaign.frequency:
-            job_id = f"campaign_{campaign_id}_recurring"
+            job_id = f"campaign_{ensure_str(campaign_uuid)}_recurring"
             schedule_recurring_campaign(
-                str(campaign_id),
+                ensure_str(campaign_uuid),  # Scheduler needs string
                 campaign.frequency,
                 job_id
             )
             
             # Create schedule record
             schedule = Schedule(
-                campaign_id=campaign_id,
+                campaign_id=campaign_uuid,  # Database needs UUID
                 scheduled_time=datetime.utcnow(),
                 status="pending",
                 job_id=job_id
@@ -54,18 +69,20 @@ class CampaignService:
         self.session.commit()
         self.session.refresh(campaign)
         
-        logger.info(f"Activated campaign {campaign.name} (ID: {campaign_id})")
+        logger.info(f"Activated campaign {campaign.name} (ID: {campaign_uuid})")
         return campaign
     
-    async def execute_campaign(self, campaign_id: str) -> Dict[str, Any]:
+    async def execute_campaign(self, campaign_id: Union[str, UUID]) -> Dict[str, Any]:
         """Execute a campaign using CrewAI agents"""
+        campaign_uuid = ensure_uuid(campaign_id)
+        
         with Session(engine) as session:
-            campaign = session.get(Campaign, UUID(campaign_id))
+            campaign = session.get(Campaign, campaign_uuid)
             if not campaign:
-                raise ValueError("Campaign not found")
+                raise ValueError(f"Campaign not found: {campaign_uuid}")
             
             if campaign.status != "active":
-                logger.warning(f"Campaign {campaign_id} is not active, skipping execution")
+                logger.warning(f"Campaign {campaign_uuid} is not active, skipping execution")
                 return {"status": "skipped", "reason": "Campaign not active"}
             
             # Get setup configuration for context
@@ -81,10 +98,10 @@ class CampaignService:
             try:
                 # Create campaign crew
                 crew = create_campaign_crew(
-                    campaign_id=campaign_id,
+                    campaign_id=campaign_uuid,  # Pass UUID object
                     channel=campaign.channel,
                     product_info={
-                        "id": str(campaign.product_id),
+                        "id": ensure_str(campaign.product_id),
                         "name": campaign.product.product_name if campaign.product else "",
                         "description": campaign.product.description if campaign.product else ""
                     },
@@ -102,12 +119,12 @@ class CampaignService:
                 })
                 
                 # Generate metrics for this execution
-                metric = await self.metrics_service.generate_and_store_metrics(campaign_id)
+                metric = await self.metrics_service.generate_and_store_metrics(campaign_uuid)
                 
                 # Update execution record
                 schedules = session.exec(
                     select(Schedule)
-                    .where(Schedule.campaign_id == UUID(campaign_id))
+                    .where(Schedule.campaign_id == campaign_uuid)
                     .where(Schedule.status == "pending")
                 ).all()
                 
@@ -122,16 +139,16 @@ class CampaignService:
                 return {
                     **result,
                     "metrics_generated": True,
-                    "metric_id": str(metric.id)
+                    "metric_id": ensure_str(metric.id)
                 }
                 
             except Exception as e:
-                logger.error(f"Error executing campaign {campaign_id}: {str(e)}")
+                logger.error(f"Error executing campaign {campaign_uuid}: {str(e)}")
                 
                 # Update schedule status to failed
                 schedules = session.exec(
                     select(Schedule)
-                    .where(Schedule.campaign_id == UUID(campaign_id))
+                    .where(Schedule.campaign_id == campaign_uuid)
                     .where(Schedule.status == "pending")
                 ).all()
                 

@@ -18,6 +18,7 @@ export default function FirmDetailsModal({ onComplete }: Props) {
   const loadCompanies = async () => {
     try {
       const data = await setupApi.getCompanies();
+      console.log('Fetched companies:', data);
       setCompanies(data);
     } catch (error) {
       console.error('Error loading companies:', error);
@@ -63,7 +64,7 @@ export default function FirmDetailsModal({ onComplete }: Props) {
                 <option value="">Choose a company...</option>
                 {companies.map((company) => (
                   <option key={company.id} value={company.id}>
-                    {company.company_name || company.company_name || 'Unknown Company'}
+                    {company.company_name || 'Unknown Company'}
                   </option>
                 ))}
               </select>

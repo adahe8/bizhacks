@@ -36,14 +36,16 @@ class SetupResponse(BaseModel):
 
 class CompanyOption(BaseModel):
     id: UUID
-    name: str
+    company_name: str  # Changed from 'name' to 'company_name'
     industry: Optional[str]
+    brand_voice: Optional[str]  # Added brand_voice field
 
 class ProductOption(BaseModel):
     id: UUID
-    name: str
+    product_name: str  # Changed from 'name' to 'product_name'
     description: Optional[str]
     company_id: Optional[UUID]
+    target_skin_type: Optional[str]  # Added target_skin_type field
 
 @router.get("/companies", response_model=List[CompanyOption])
 async def get_companies(session: Session = Depends(get_session)):
@@ -52,8 +54,9 @@ async def get_companies(session: Session = Depends(get_session)):
     return [
         CompanyOption(
             id=company.id,
-            name=company.company_name or "Unknown",
-            industry=company.industry
+            company_name=company.company_name or "Unknown",  # Using company_name
+            industry=company.industry,
+            brand_voice=company.brand_voice  # Added brand_voice
         )
         for company in companies
     ]
@@ -72,9 +75,10 @@ async def get_products(
     return [
         ProductOption(
             id=product.id,
-            name=product.product_name or "Unknown",
+            product_name=product.product_name or "Unknown",  # Using product_name
             description=product.description,
-            company_id=product.company_id
+            company_id=product.company_id,
+            target_skin_type=product.target_skin_type  # Added target_skin_type
         )
         for product in products
     ]
@@ -127,7 +131,7 @@ async def initialize_setup(
     # This would typically be done in a background task
     try:
         segments = await generate_customer_segments(
-            product_id=str(setup_data.product_id),
+            product_id=setup_data.product_id,
             market_details=setup_data.market_details,
             strategic_goals=setup_data.strategic_goals
         )

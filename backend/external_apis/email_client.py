@@ -4,7 +4,7 @@ from datetime import datetime
 import random
 import logging
 
-from core.config import settings
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 

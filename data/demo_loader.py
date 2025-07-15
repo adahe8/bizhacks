@@ -1,3 +1,4 @@
+# backend/data/demo_loader.py
 import pandas as pd
 import os
 from sqlmodel import Session
@@ -67,7 +68,7 @@ def load_demo_data():
                 users_df = pd.read_csv(os.path.join(demo_path, "users.csv"))
                 for _, row in users_df.iterrows():
                     user = User(
-                        id=str(row['id']),
+                        id=UUID(row['id']) if 'id' in row and pd.notna(row['id']) else None,  # Convert to UUID
                         age=int(row['age']) if pd.notna(row.get('age')) else None,
                         location=row.get('location'),
                         skin_type=row.get('skin_type'),

@@ -1,6 +1,8 @@
 // frontend/components/GameController.tsx
 import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
+import { gameStateApi } from '@/lib/api';
+
 
 interface Props {
   onDateChange: (date: Date) => void;
@@ -44,13 +46,40 @@ export default function GameController({ onDateChange }: Props) {
     onDateChange(gameDate);
   }, [gameDate, onDateChange]);
 
-  const handlePlayPause = () => {
-    setIsRunning(!isRunning);
+  // In handlePlayPause function:
+  const handlePlayPause = async () => {
+    const newIsRunning = !isRunning;
+    setIsRunning(newIsRunning);
+    
+    // Persist to backend
+    await gameStateApi.update({
+      is_running: newIsRunning,
+      game_speed: speed
+    });
   };
 
-  const handleSpeedChange = (newSpeed: 'slow' | 'medium' | 'fast') => {
+  // In handleSpeedChange function:
+  const handleSpeedChange = async (newSpeed: 'slow' | 'medium' | 'fast') => {
     setSpeed(newSpeed);
+    
+    // Persist to backend
+    await gameStateApi.update({
+      game_speed: newSpeed
+    });
   };
+
+  // Add useEffect to load initial state
+  useEffect(() => {
+    const loadGameState = async () => {
+      const state = await gameStateApi.getCurrent();
+      if (state) {
+        setGameDate(new Date(state.current_date));
+        setIsRunning(state.is_running);
+        setSpeed(state.game_speed);
+      }
+    };
+    loadGameState();
+  }, []);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">

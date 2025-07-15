@@ -121,7 +121,19 @@ class CustomerSegment(SQLModel, table=True):
     name: str
     description: Optional[str] = Field(default=None)
     criteria: Optional[str] = Field(default=None)  # JSON string of criteria
-    size: Optional[int] = Field(default=0)
+    size: Optional[int] = Field(default=0)  # Percentage of total users
+    channel_distribution: Optional[str] = Field(default=None)  # JSON string of channel percentages
+    cluster_centroid: Optional[str] = Field(default=None)  # JSON string of centroid features
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class CampaignMetrics(SQLModel, table=True):
+    """Campaign-specific metrics configuration"""
+    __tablename__ = "campaign_metrics"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    campaign_id: UUID = Field(foreign_key="campaigns.id", unique=True)
+    channel: str
+    metrics_config: str  # JSON string with mean/variance for each metric
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Schedule(SQLModel, table=True):
@@ -154,6 +166,19 @@ class SetupConfiguration(SQLModel, table=True):
     campaign_count: int = Field(default=5)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class GameState(SQLModel, table=True):
+    """Game state tracking"""
+    __tablename__ = "game_state"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    current_date: datetime = Field(default_factory=datetime.utcnow)
+    game_speed: str = Field(default="medium")  # slow, medium, fast
+    is_running: bool = Field(default=False)
+    total_reach_optimal: float = Field(default=0.0)
+    total_reach_non_optimal: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Transaction(SQLModel, table=True):
     """Transaction model for user purchases"""

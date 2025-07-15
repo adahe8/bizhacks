@@ -1,6 +1,7 @@
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Dict, Any
+import json
 import logging
 
 from core.config import settings
@@ -31,18 +32,28 @@ def create_google_seo_content_agent(
         tools=[]
     )
     
-    # Define the content generation task
-    agent.task = Task(
-        description="""
-        Create Google Ads and SEO content based on the campaign brief.
+    return agent
+
+def create_google_seo_content_task(agent: Agent, context: Dict[str, Any]) -> Task:
+    """Create task for Google SEO/Ads content generation"""
+    task = Task(
+        description=f"""
+        Create Google Ads and SEO content for the campaign: {context.get('campaign_name')}
         
-        Include:
+        Campaign Details:
+        - Description: {context.get('campaign_description', 'N/A')}
+        - Target Segment: {context.get('customer_segment', 'General Audience')}
+        - Budget: ${context.get('budget', 0)}
+        - Product: {context.get('product_name', 'Product')}
+        - Strategic Goals: {context.get('strategic_goals', 'Drive qualified traffic')}
+        
+        Create optimized Google Ads content that includes:
         1. Google Ads:
            - Headlines (3-5 variations, max 30 chars each)
            - Descriptions (2-3 variations, max 90 chars each)
            - Display URL paths
-           - Keywords (10-15 relevant keywords)
-           - Negative keywords (5-10)
+           - Keywords (10-15 relevant keywords with high commercial intent)
+           - Negative keywords (5-10 to exclude irrelevant traffic)
         
         2. SEO Content:
            - Meta title (50-60 chars)
@@ -51,10 +62,12 @@ def create_google_seo_content_agent(
            - Content outline (main topics to cover)
            - Target keywords with search intent
         
-        Output as JSON with keys: ads_content, seo_content
+        Focus on keywords that indicate buying intent and match the target segment.
+        
+        Output as JSON with keys: ads_content (containing headlines, descriptions, keywords, negative_keywords), seo_content (containing meta_title, meta_description, h1, outline, target_keywords)
         """,
         agent=agent,
         expected_output="JSON formatted Google Ads and SEO content"
     )
     
-    return agent
+    return task

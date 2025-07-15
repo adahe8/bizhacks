@@ -1,6 +1,7 @@
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Dict, Any
+import json
 import logging
 
 from core.config import settings
@@ -31,12 +32,22 @@ def create_facebook_content_agent(
         tools=[]
     )
     
-    # Define the content generation task
-    agent.task = Task(
-        description="""
-        Create Facebook marketing content based on the campaign brief.
+    return agent
+
+def create_facebook_content_task(agent: Agent, context: Dict[str, Any]) -> Task:
+    """Create task for Facebook content generation"""
+    task = Task(
+        description=f"""
+        Create Facebook marketing content for the campaign: {context.get('campaign_name')}
         
-        Include:
+        Campaign Details:
+        - Description: {context.get('campaign_description', 'N/A')}
+        - Target Segment: {context.get('customer_segment', 'General Audience')}
+        - Budget: ${context.get('budget', 0)}
+        - Product: {context.get('product_name', 'Product')}
+        - Strategic Goals: {context.get('strategic_goals', 'Increase brand awareness')}
+        
+        Create engaging Facebook content that includes:
         1. Primary text (engaging hook, main message, call-to-action)
         2. Headline (if using link format)
         3. Description (if using link format)
@@ -46,10 +57,12 @@ def create_facebook_content_agent(
         7. Audience targeting suggestions
         
         The content should be optimized for Facebook's algorithm and user behavior.
+        Make it shareable, engaging, and visually appealing.
+        
         Output as JSON with keys: primary_text, headline, description, image_description, hashtags, post_time, targeting
         """,
         agent=agent,
         expected_output="JSON formatted Facebook content"
     )
     
-    return agent
+    return task

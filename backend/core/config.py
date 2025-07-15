@@ -1,5 +1,6 @@
+# backend/core/config.py
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, Dict, Any
 import os
 from dotenv import load_dotenv
 
@@ -52,6 +53,11 @@ class Settings(BaseSettings):
     MAX_BUDGET_ALLOCATION_PERCENT: float = 50.0
     REBALANCING_THRESHOLD: float = 0.15
     
+    # Rebalancing Optimization Parameters
+    BUDGET_EVENNESS_PENALTY: float = 0.2  # Penalty for uneven distribution
+    PERFORMANCE_WEIGHT: float = 0.7  # Weight for performance in optimization
+    EVENNESS_WEIGHT: float = 0.3  # Weight for even distribution
+    
     # Security
     SECRET_KEY: str = "your-secret-key-here-change-in-production"
     ALGORITHM: str = "HS256"
@@ -60,6 +66,40 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
+    
+    # Game Settings
+    GAME_SPEEDS: Dict[str, int] = {
+        "slow": 30,    # 30 seconds per day
+        "medium": 15,  # 15 seconds per day
+        "fast": 5      # 5 seconds per day
+    }
+    DEFAULT_GAME_SPEED: str = "medium"
+    
+    # Clustering Settings
+    NUM_CLUSTERS: int = 4
+    CLUSTER_RANDOM_STATE: int = 42
+    
+    # Channel Metrics Configuration
+    CHANNEL_METRICS: Dict[str, Dict[str, Dict[str, float]]] = {
+        "facebook": {
+            "engagement_rate": {"base_mean": 0.035, "base_variance": 0.008, "spend_coefficient": 0.00001},
+            "click_through_rate": {"base_mean": 0.025, "base_variance": 0.006, "spend_coefficient": 0.000008},
+            "conversion_rate": {"base_mean": 0.012, "base_variance": 0.003, "spend_coefficient": 0.000005}
+        },
+        "email": {
+            "open_rate": {"base_mean": 0.22, "base_variance": 0.04, "spend_coefficient": 0.00002},
+            "click_rate": {"base_mean": 0.028, "base_variance": 0.007, "spend_coefficient": 0.00001},
+            "conversion_rate": {"base_mean": 0.018, "base_variance": 0.004, "spend_coefficient": 0.000007}
+        },
+        "google_seo": {
+            "impressions": {"base_mean": 5000, "base_variance": 1200, "spend_coefficient": 0.8},
+            "click_through_rate": {"base_mean": 0.032, "base_variance": 0.009, "spend_coefficient": 0.00001},
+            "conversion_rate": {"base_mean": 0.015, "base_variance": 0.0035, "spend_coefficient": 0.000006}
+        }
+    }
+    
+    # Campaign-specific metrics variance multipliers (for uniqueness)
+    CAMPAIGN_VARIANCE_RANGE: tuple = (0.8, 1.2)  # Random multiplier range for each campaign
     
     class Config:
         env_file = ".env"

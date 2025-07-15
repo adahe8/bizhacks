@@ -47,6 +47,11 @@ export const campaignApi = {
     return response.data;
   },
   
+  getContent: async (id: string) => {
+    const response = await api.get(`/api/campaigns/${id}/content`);
+    return response.data;
+  },
+  
   create: async (campaignData: any) => {
     const response = await api.post<Campaign>('/api/campaigns', campaignData);
     return response.data;

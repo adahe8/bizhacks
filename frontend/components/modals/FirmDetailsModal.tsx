@@ -40,11 +40,11 @@ export default function FirmDetailsModal({ onComplete }: Props) {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div className="bg-primary-600 h-2 rounded-full" style={{ width: '20%' }}></div>
           </div>
-          <p className="text-sm text-gray-500 mt-2">Step 2 of 6</p>
+          <p className="text-sm text-gray-500 mt-2">Step 1 of 6</p>
         </div>
 
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Select Your Company</h2>
-        <p className="text-gray-600 mb-6">Choose the company that owns this product.</p>
+        <p className="text-gray-600 mb-6">Let's start by choosing your company.</p>
 
         {loading ? (
           <div className="flex justify-center py-8">
@@ -63,7 +63,7 @@ export default function FirmDetailsModal({ onComplete }: Props) {
                 <option value="">Choose a company...</option>
                 {companies.map((company) => (
                   <option key={company.id} value={company.id}>
-                    {company.company_name}
+                    {company.company_name || company.company_name || 'Unknown Company'}
                   </option>
                 ))}
               </select>

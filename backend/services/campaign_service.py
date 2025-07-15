@@ -9,6 +9,7 @@ from data.models import Campaign, Schedule, SetupConfiguration
 from agents.crew_factory import create_campaign_crew
 from core.scheduler import schedule_recurring_campaign
 from services.crew_service import CrewService
+from services.metrics_generator_service import MetricsGeneratorService
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class CampaignService:
     def __init__(self, session: Session):
         self.session = session
         self.crew_service = CrewService()
+        self.metrics_service = MetricsGeneratorService()
     
     async def activate_campaign(self, campaign_id: UUID) -> Campaign:
         """Activate a campaign and schedule it"""
@@ -99,6 +101,9 @@ class CampaignService:
                     "budget": campaign.budget
                 })
                 
+                # Generate metrics for this execution
+                metric = await self.metrics_service.generate_and_store_metrics(campaign_id)
+                
                 # Update execution record
                 schedules = session.exec(
                     select(Schedule)
@@ -113,8 +118,12 @@ class CampaignService:
                 
                 session.commit()
                 
-                logger.info(f"Campaign {campaign.name} executed successfully")
-                return result
+                logger.info(f"Campaign {campaign.name} executed successfully with reach impact")
+                return {
+                    **result,
+                    "metrics_generated": True,
+                    "metric_id": str(metric.id)
+                }
                 
             except Exception as e:
                 logger.error(f"Error executing campaign {campaign_id}: {str(e)}")

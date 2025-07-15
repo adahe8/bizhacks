@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { setupApi } from '@/lib/api';
+import { setupApi, agentApi } from '@/lib/api';
 import ProductDetailsModal from '@/components/modals/ProductDetailsModal';
 import FirmDetailsModal from '@/components/modals/FirmDetailsModal';
 import MarketDetailsModal from '@/components/modals/MarketDetailsModal';
@@ -11,8 +11,8 @@ import BudgetModal from '@/components/modals/BudgetModal';
 import GuardrailsModal from '@/components/modals/GuardrailsModal';
 
 type SetupStep = 
-  | 'product'
   | 'firm'
+  | 'product'
   | 'market'
   | 'strategic'
   | 'budget'
@@ -23,8 +23,8 @@ export default function Home() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<SetupStep | null>(null);
   const [setupData, setSetupData] = useState({
-    product_id: '',
     company_id: '',
+    product_id: '',
     market_details: {},
     strategic_goals: '',
     monthly_budget: 0,
@@ -45,11 +45,11 @@ export default function Home() {
         router.push('/dashboard');
       } else {
         // No setup, start onboarding
-        setCurrentStep('product');
+        setCurrentStep('firm');
       }
     } catch (error) {
       console.error('Error checking setup:', error);
-      setCurrentStep('product');
+      setCurrentStep('firm');
     }
   };
 
@@ -57,7 +57,7 @@ export default function Home() {
     setSetupData({ ...setupData, ...stepData });
     
     // Move to next step
-    const steps: SetupStep[] = ['product', 'firm', 'market', 'strategic', 'budget', 'guardrails'];
+    const steps: SetupStep[] = ['firm', 'product', 'market', 'strategic', 'budget', 'guardrails'];
     const currentIndex = steps.indexOf(currentStep as SetupStep);
     
     if (currentIndex < steps.length - 1) {
@@ -71,6 +71,15 @@ export default function Home() {
     try {
       await setupApi.initialize(setupData);
       setCurrentStep('complete');
+      
+      // Generate customer segments after setup
+      setTimeout(async () => {
+        try {
+          await agentApi.generateSegments();
+        } catch (error) {
+          console.error('Error generating segments:', error);
+        }
+      }, 1000);
       
       // Redirect to dashboard after a brief delay
       setTimeout(() => {
@@ -95,7 +104,7 @@ export default function Home() {
         <div className="text-center">
           <div className="text-6xl mb-4">✨</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Complete!</h2>
-          <p className="text-gray-600">Redirecting to your dashboard...</p>
+          <p className="text-gray-600">Generating customer segments...</p>
         </div>
       </div>
     );
@@ -103,15 +112,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
-      {currentStep === 'product' && (
-        <ProductDetailsModal
-          onComplete={(data) => handleStepComplete({ product_id: data.product_id })}
-        />
-      )}
-      
       {currentStep === 'firm' && (
         <FirmDetailsModal
           onComplete={(data) => handleStepComplete({ company_id: data.company_id })}
+        />
+      )}
+      
+      {currentStep === 'product' && (
+        <ProductDetailsModal
+          companyId={setupData.company_id}
+          onComplete={(data) => handleStepComplete({ product_id: data.product_id })}
         />
       )}
       

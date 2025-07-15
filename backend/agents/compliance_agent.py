@@ -29,10 +29,16 @@ def create_compliance_agent(guardrails: str) -> Agent:
         tools=[]
     )
     
-    # Define the compliance checking task
-    agent.task = Task(
-        description="""
-        Review the provided content for compliance with brand guidelines and regulations.
+    return agent
+
+def create_compliance_task(agent: Agent, guardrails: str) -> Task:
+    """Create task for compliance checking"""
+    task = Task(
+        description=f"""
+        Review the generated marketing content for compliance with brand guidelines and regulations.
+        
+        Guardrails to enforce:
+        {guardrails}
         
         Check for:
         1. Brand voice consistency
@@ -40,6 +46,8 @@ def create_compliance_agent(guardrails: str) -> Agent:
         3. Legal compliance (claims, disclaimers)
         4. Prohibited content or language
         5. Tone and messaging alignment
+        
+        If the content violates any guidelines, provide specific feedback on what needs to be changed.
         
         Provide:
         1. Compliance status (approved/rejected)
@@ -53,7 +61,7 @@ def create_compliance_agent(guardrails: str) -> Agent:
         expected_output="JSON formatted compliance review"
     )
     
-    return agent
+    return task
 
 async def validate_content(content: Dict[str, Any], guardrails: str) -> Dict[str, Any]:
     """Validate content against brand guardrails"""

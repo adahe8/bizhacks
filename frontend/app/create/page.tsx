@@ -28,6 +28,11 @@ export default function CreateCampaign() {
   };
 
   const handleGenerateIdeas = async () => {
+    if (segments.length === 0) {
+      alert('No customer segments available. Please generate segments first.');
+      return;
+    }
+
     setLoading(true);
     try {
       const ideas = await agentApi.generateCampaignIdeas({
@@ -38,6 +43,7 @@ export default function CreateCampaign() {
       setStep('select');
     } catch (error) {
       console.error('Error generating ideas:', error);
+      alert('Failed to generate campaign ideas. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -51,9 +57,10 @@ export default function CreateCampaign() {
   const handleCreateCampaign = async (campaignData: any) => {
     try {
       const campaign = await campaignApi.create(campaignData);
-      router.push('/dashboard');
+      router.push('/campaigns');
     } catch (error) {
       console.error('Error creating campaign:', error);
+      alert('Failed to create campaign. Please try again.');
     }
   };
 
@@ -66,38 +73,56 @@ export default function CreateCampaign() {
 
       {step === 'generate' && (
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Generate Campaign Ideas</h2>
+          <h2 className="text-xl font-semibold mb-4">Campaign Creation Options</h2>
           <p className="text-gray-600 mb-6">
-            Our AI will analyze your customer segments and create tailored campaign ideas across all channels.
+            Choose how you want to create your campaign.
           </p>
           
           <div className="mb-6">
             <h3 className="font-medium text-gray-900 mb-2">Available Segments:</h3>
-            <div className="flex flex-wrap gap-2">
-              {segments.map((segment) => (
-                <span
-                  key={segment.id}
-                  className="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm"
-                >
-                  {segment.name}
-                </span>
-              ))}
-            </div>
+            {segments.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {segments.map((segment) => (
+                  <span
+                    key={segment.id}
+                    className="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm"
+                  >
+                    {segment.name} ({segment.size}%)
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No segments available. Generate segments from the dashboard first.</p>
+            )}
           </div>
 
-          <div className="flex gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button
               onClick={handleGenerateIdeas}
               disabled={loading || segments.length === 0}
-              className="btn-primary"
+              className={`p-6 border-2 rounded-lg text-center transition-all ${
+                loading || segments.length === 0
+                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                  : 'border-primary-200 hover:border-primary-400 hover:bg-primary-50 cursor-pointer'
+              }`}
             >
-              {loading ? 'Generating...' : 'Generate Ideas'}
+              <div className="text-3xl mb-3">🤖</div>
+              <h3 className="font-semibold text-lg mb-2">AI-Generated Ideas</h3>
+              <p className="text-sm text-gray-600">
+                Let AI create campaign ideas based on your segments and goals
+              </p>
+              {loading && <p className="text-sm text-primary-600 mt-2">Generating ideas...</p>}
             </button>
+            
             <button
               onClick={() => setStep('customize')}
-              className="btn-outline"
+              className="p-6 border-2 rounded-lg text-center transition-all border-gray-200 hover:border-gray-400 hover:bg-gray-50 cursor-pointer"
             >
-              Create Custom Campaign
+              <div className="text-3xl mb-3">✏️</div>
+              <h3 className="font-semibold text-lg mb-2">Create Custom</h3>
+              <p className="text-sm text-gray-600">
+                Manually create a campaign with your own specifications
+              </p>
             </button>
           </div>
         </div>
@@ -105,7 +130,16 @@ export default function CreateCampaign() {
 
       {step === 'select' && (
         <div>
-          <h2 className="text-xl font-semibold mb-4">Select a Campaign Idea</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Select a Campaign Idea</h2>
+            <button
+              onClick={() => setStep('generate')}
+              className="text-gray-600 hover:text-gray-900"
+            >
+              ← Back
+            </button>
+          </div>
+          
           <div className="space-y-4">
             {campaignIdeas.map((idea, index) => (
               <div
@@ -139,15 +173,6 @@ export default function CreateCampaign() {
               </div>
             ))}
           </div>
-          
-          <div className="mt-6">
-            <button
-              onClick={() => setStep('generate')}
-              className="btn-outline"
-            >
-              Back
-            </button>
-          </div>
         </div>
       )}
 
@@ -162,7 +187,10 @@ export default function CreateCampaign() {
             budget: selectedIdea.suggested_budget,
           } : undefined}
           onSubmit={handleCreateCampaign}
-          onCancel={() => setStep(selectedIdea ? 'select' : 'generate')}
+          onCancel={() => {
+            setSelectedIdea(null);
+            setStep(selectedIdea ? 'select' : 'generate');
+          }}
         />
       )}
     </div>

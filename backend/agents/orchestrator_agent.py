@@ -3,6 +3,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Dict, Any
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
+import numpy as np
+from scipy.optimize import minimize
 import json
 import logging
 
@@ -34,8 +36,56 @@ def create_orchestrator_agent() -> Agent:
     
     return agent
 
+def calculate_performance_score(metrics: List[Metric]) -> float:
+    """Calculate performance score from metrics"""
+    if not metrics:
+        return 0.5  # Neutral score for new campaigns
+    
+    # Calculate weighted performance score
+    total_impressions = sum(m.impressions or 0 for m in metrics)
+    total_clicks = sum(m.clicks or 0 for m in metrics)
+    avg_engagement = sum(m.engagement_rate or 0 for m in metrics) / len(metrics)
+    avg_conversion = sum(m.conversion_rate or 0 for m in metrics) / len(metrics)
+    avg_cpa = sum(m.cpa or 0 for m in metrics) / len(metrics)
+    
+    # Normalize CPA (lower is better)
+    normalized_cpa = 1 / (1 + avg_cpa / 100) if avg_cpa > 0 else 0.5
+    
+    # Calculate CTR
+    ctr = total_clicks / total_impressions if total_impressions > 0 else 0
+    
+    # Weighted score
+    score = (
+        0.2 * ctr +
+        0.3 * avg_engagement +
+        0.3 * avg_conversion +
+        0.2 * normalized_cpa
+    )
+    
+    return score
+
+def optimization_objective(budgets: np.ndarray, performance_scores: np.ndarray, total_budget: float) -> float:
+    """Objective function to maximize performance while penalizing uneven distribution"""
+    # Ensure budgets sum to total budget
+    budgets = budgets * (total_budget / np.sum(budgets))
+    
+    # Performance component (negative because we minimize)
+    performance = -np.sum(budgets * performance_scores)
+    
+    # Evenness penalty (standard deviation of budget distribution)
+    mean_budget = total_budget / len(budgets)
+    evenness_penalty = np.std(budgets - mean_budget) * settings.BUDGET_EVENNESS_PENALTY
+    
+    # Total objective
+    objective = (
+        settings.PERFORMANCE_WEIGHT * performance + 
+        settings.EVENNESS_WEIGHT * evenness_penalty
+    )
+    
+    return objective
+
 async def rebalance_budgets() -> List[Dict[str, Any]]:
-    """Rebalance budgets across all active campaigns based on performance"""
+    """Rebalance budgets across all active campaigns using optimization"""
     
     with Session(engine) as session:
         # Get all active campaigns
@@ -49,7 +99,7 @@ async def rebalance_budgets() -> List[Dict[str, Any]]:
         
         # Get metrics for each campaign from the last 7 days
         week_ago = datetime.utcnow() - timedelta(days=7)
-        campaign_metrics = {}
+        campaign_data = []
         
         for campaign in active_campaigns:
             metrics = session.exec(
@@ -58,105 +108,74 @@ async def rebalance_budgets() -> List[Dict[str, Any]]:
                 .where(Metric.timestamp >= week_ago)
             ).all()
             
-            if metrics:
-                # Calculate average performance
-                avg_engagement = sum(m.engagement_rate or 0 for m in metrics) / len(metrics)
-                avg_conversion = sum(m.conversion_rate or 0 for m in metrics) / len(metrics)
-                avg_cpa = sum(m.cpa or 0 for m in metrics) / len(metrics)
-                total_clicks = sum(m.clicks or 0 for m in metrics)
-                
-                campaign_metrics[str(campaign.id)] = {
-                    "name": campaign.name,
-                    "channel": campaign.channel,
-                    "current_budget": campaign.budget,
-                    "avg_engagement_rate": avg_engagement,
-                    "avg_conversion_rate": avg_conversion,
-                    "avg_cpa": avg_cpa,
-                    "total_clicks": total_clicks,
-                    "performance_score": (avg_engagement * 0.3 + avg_conversion * 0.5 - (avg_cpa / 100) * 0.2)
-                }
-            else:
-                # No metrics yet, keep current budget
-                campaign_metrics[str(campaign.id)] = {
-                    "name": campaign.name,
-                    "channel": campaign.channel,
-                    "current_budget": campaign.budget,
-                    "performance_score": 0.5  # Neutral score
-                }
+            performance_score = calculate_performance_score(metrics)
+            
+            campaign_data.append({
+                "campaign": campaign,
+                "performance_score": performance_score,
+                "current_budget": campaign.budget
+            })
         
-        # Create orchestrator agent
-        agent = create_orchestrator_agent()
+        # Extract data for optimization
+        performance_scores = np.array([c["performance_score"] for c in campaign_data])
+        current_budgets = np.array([c["current_budget"] for c in campaign_data])
+        total_budget = np.sum(current_budgets)
         
-        # Get total budget
-        total_budget = sum(c.budget for c in active_campaigns)
+        # Optimization constraints
+        constraints = [
+            {'type': 'eq', 'fun': lambda x: np.sum(x) - total_budget}  # Sum equals total budget
+        ]
         
-        # Create rebalancing task
-        task = Task(
-            description=f"""
-            Analyze the performance metrics and reallocate the total budget of ${total_budget}
-            across the active campaigns to maximize overall ROI.
-            
-            Campaign Performance Data:
-            {json.dumps(campaign_metrics, indent=2)}
-            
-            Constraints:
-            - Total budget must remain ${total_budget}
-            - No campaign should receive less than ${settings.MIN_CAMPAIGN_BUDGET}
-            - No campaign should receive more than {settings.MAX_BUDGET_ALLOCATION_PERCENT}% of total budget
-            - Only make changes if performance difference exceeds {settings.REBALANCING_THRESHOLD * 100}%
-            
-            For each campaign, provide:
-            1. campaign_id
-            2. new_budget
-            3. reason for change
-            
-            Return as a JSON array of budget allocations.
-            """,
-            agent=agent,
-            expected_output="JSON array of budget allocations"
+        # Bounds for each campaign budget
+        bounds = [(settings.MIN_CAMPAIGN_BUDGET, total_budget * settings.MAX_BUDGET_ALLOCATION_PERCENT / 100) 
+                  for _ in campaign_data]
+        
+        # Run optimization
+        result = minimize(
+            optimization_objective,
+            current_budgets,
+            args=(performance_scores, total_budget),
+            method='SLSQP',
+            bounds=bounds,
+            constraints=constraints
         )
         
-        # Execute task
-        result = task.execute()
+        if not result.success:
+            logger.error(f"Optimization failed: {result.message}")
+            return []
         
-        try:
-            # Parse the result
-            allocations = json.loads(result)
+        # Apply rebalancing results
+        new_budgets = result.x
+        rebalance_results = []
+        
+        for i, data in enumerate(campaign_data):
+            campaign = data["campaign"]
+            old_budget = campaign.budget
+            new_budget = new_budgets[i]
             
-            rebalance_results = []
-            
-            for allocation in allocations:
-                campaign_id = allocation.get("campaign_id")
-                new_budget = allocation.get("new_budget", 0)
-                reason = allocation.get("reason", "Performance-based adjustment")
+            # Only update if change is significant
+            change_ratio = abs(new_budget - old_budget) / old_budget
+            if change_ratio > settings.REBALANCING_THRESHOLD:
+                campaign.budget = new_budget
+                campaign.updated_at = datetime.utcnow()
+                session.add(campaign)
                 
-                # Find the campaign
-                campaign = next((c for c in active_campaigns if str(c.id) == campaign_id), None)
-                if campaign and new_budget != campaign.budget:
-                    old_budget = campaign.budget
-                    
-                    # Update campaign budget
-                    campaign.budget = new_budget
-                    campaign.updated_at = datetime.utcnow()
-                    session.add(campaign)
-                    
-                    rebalance_results.append({
-                        "campaign_id": campaign.id,
-                        "old_budget": old_budget,
-                        "new_budget": new_budget,
-                        "reason": reason
-                    })
-                    
-                    logger.info(f"Rebalanced campaign {campaign.name}: ${old_budget} -> ${new_budget}")
-            
-            session.commit()
-            
-            return rebalance_results
-            
-        except json.JSONDecodeError:
-            logger.error("Failed to parse rebalancing results")
-            return []
-        except Exception as e:
-            logger.error(f"Error during budget rebalancing: {str(e)}")
-            session.rollback()
-            return []
+                reason = f"Performance score: {data['performance_score']:.3f}"
+                if new_budget > old_budget:
+                    reason += " - Increased due to strong performance"
+                else:
+                    reason += " - Decreased to reallocate to better performers"
+                
+                rebalance_results.append({
+                    "campaign_id": campaign.id,
+                    "campaign_name": campaign.name,
+                    "old_budget": old_budget,
+                    "new_budget": new_budget,
+                    "reason": reason
+                })
+                
+                logger.info(f"Rebalanced campaign {campaign.name}: ${old_budget:.0f} -> ${new_budget:.0f}")
+        
+        session.commit()
+        
+        return rebalance_results

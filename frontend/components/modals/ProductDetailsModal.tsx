@@ -3,21 +3,24 @@ import { setupApi } from '@/lib/api';
 import { Product } from '@/lib/types';
 
 interface Props {
+  companyId: string;
   onComplete: (data: { product_id: string }) => void;
 }
 
-export default function ProductDetailsModal({ onComplete }: Props) {
+export default function ProductDetailsModal({ companyId, onComplete }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadProducts();
-  }, []);
+    if (companyId) {
+      loadProducts();
+    }
+  }, [companyId]);
 
   const loadProducts = async () => {
     try {
-      const data = await setupApi.getProducts();
+      const data = await setupApi.getProducts(companyId);
       setProducts(data);
     } catch (error) {
       console.error('Error loading products:', error);

@@ -1,12 +1,13 @@
 from crewai import Crew, Process
 from typing import Dict, Any, List
 import logging
+import json
 
-from agents.content_agents.email_agent import create_email_content_agent
-from agents.content_agents.facebook_agent import create_facebook_content_agent
-from agents.content_agents.google_seo_agent import create_google_seo_content_agent
-from agents.compliance_agent import create_compliance_agent
-from agents.campaign_execution_agent import create_execution_agent
+from agents.content_agents.email_agent import create_email_content_agent, create_email_content_task
+from agents.content_agents.facebook_agent import create_facebook_content_agent, create_facebook_content_task  
+from agents.content_agents.google_seo_agent import create_google_seo_content_agent, create_google_seo_content_task
+from agents.compliance_agent import create_compliance_agent, create_compliance_task
+from agents.campaign_execution_agent import create_execution_agent, create_execution_task
 
 logger = logging.getLogger(__name__)
 
@@ -20,28 +21,56 @@ def create_campaign_crew(
 ) -> Crew:
     """Create a crew for campaign execution"""
     
+    # Parse market details if it's a JSON string
+    if isinstance(market_details, str):
+        try:
+            market_details_dict = json.loads(market_details)
+            market_details_str = f"Target: {market_details_dict.get('target_demographics', 'N/A')}, Market Size: {market_details_dict.get('market_size', 'N/A')}"
+        except:
+            market_details_str = market_details
+    else:
+        market_details_str = str(market_details)
+    
+    # Create context for tasks
+    context = {
+        "campaign_id": campaign_id,
+        "product_name": product_info.get("name", "Product"),
+        "product_description": product_info.get("description", ""),
+        "strategic_goals": strategic_goals,
+        "market_details": market_details_str
+    }
+    
     # Select content agent based on channel
     if channel == "email":
-        content_agent = create_email_content_agent(product_info, market_details)
+        content_agent = create_email_content_agent(product_info, market_details_str)
+        content_task = create_email_content_task(content_agent, context)
     elif channel == "facebook":
-        content_agent = create_facebook_content_agent(product_info, market_details)
+        content_agent = create_facebook_content_agent(product_info, market_details_str)
+        content_task = create_facebook_content_task(content_agent, context)
     elif channel == "google_seo":
-        content_agent = create_google_seo_content_agent(product_info, market_details)
+        content_agent = create_google_seo_content_agent(product_info, market_details_str)
+        content_task = create_google_seo_content_task(content_agent, context)
     else:
         raise ValueError(f"Unsupported channel: {channel}")
     
-    # Create compliance agent
+    # Create compliance agent and task
     compliance_agent = create_compliance_agent(guardrails)
+    compliance_task = create_compliance_task(compliance_agent, guardrails)
     
-    # Create execution agent
+    # Create execution agent and task
     execution_agent = create_execution_agent(channel)
+    execution_task = create_execution_task(execution_agent, channel, campaign_id)
+    
+    # Set task dependencies
+    compliance_task.context = [content_task]
+    execution_task.context = [compliance_task]
     
     # Create crew with sequential process
     crew = Crew(
         agents=[content_agent, compliance_agent, execution_agent],
+        tasks=[content_task, compliance_task, execution_task],
         process=Process.sequential,
-        verbose=True,
-        max_iter=5  # Allow iterations for compliance feedback
+        verbose=True
     )
     
     logger.info(f"Created campaign crew for {channel} channel")

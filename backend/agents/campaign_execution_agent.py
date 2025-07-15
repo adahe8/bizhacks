@@ -34,17 +34,23 @@ def create_execution_agent(channel: str) -> Agent:
         tools=[]
     )
     
-    # Define the execution task
-    agent.task = Task(
+    return agent
+
+def create_execution_task(agent: Agent, channel: str, campaign_id: str) -> Task:
+    """Create task for campaign execution"""
+    task = Task(
         description=f"""
-        Execute the campaign on {channel} platform.
+        Execute the approved campaign content on {channel} platform.
         
-        Steps:
-        1. Prepare content for publication
-        2. Validate all required fields
-        3. Schedule or publish immediately
-        4. Store content assets
-        5. Return execution status
+        Campaign ID: {campaign_id}
+        
+        Steps to perform:
+        1. Verify the content has been approved by compliance
+        2. Prepare content for publication on {channel}
+        3. Validate all required fields are present
+        4. Schedule or publish immediately based on content recommendations
+        5. Store content assets for future reference
+        6. Return execution status and confirmation
         
         Output as JSON with keys: status, asset_id, published_at, platform_response
         """,
@@ -52,7 +58,7 @@ def create_execution_agent(channel: str) -> Agent:
         expected_output="JSON formatted execution result"
     )
     
-    return agent
+    return task
 
 async def execute_campaign_content(
     campaign_id: str,

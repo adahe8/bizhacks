@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { setupApi } from '@/lib/api';
-import { Product } from '@/lib/types';
+import { setupApi, agentApi } from '@/lib/api';
+import { CustomerSegment } from '@/lib/types';
 
 interface CampaignFormData {
-  product_id: string;
   name: string;
   description: string;
   channel: 'facebook' | 'email' | 'google_seo';
@@ -15,13 +14,13 @@ interface CampaignFormData {
 
 interface Props {
   initialData?: Partial<CampaignFormData>;
-  onSubmit: (data: CampaignFormData) => void;
+  onSubmit: (data: any) => void;
   onCancel: () => void;
 }
 
 export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: Props) {
-  const [products, setProducts] = useState<Product[]>([]);
   const [currentSetup, setCurrentSetup] = useState<any>(null);
+  const [segments, setSegments] = useState<CustomerSegment[]>([]);
   
   const {
     register,
@@ -44,12 +43,12 @@ export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: 
 
   const loadData = async () => {
     try {
-      const [productsData, setupData] = await Promise.all([
-        setupApi.getProducts(),
+      const [setupData, segmentsData] = await Promise.all([
         setupApi.getCurrent(),
+        agentApi.getSegments()
       ]);
-      setProducts(productsData);
       setCurrentSetup(setupData);
+      setSegments(segmentsData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -68,31 +67,20 @@ export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: 
     }
   };
 
+  const handleFormSubmit = (data: CampaignFormData) => {
+    // Add product_id from setup
+    const submitData = {
+      ...data,
+      product_id: currentSetup?.product_id
+    };
+    onSubmit(submitData);
+  };
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="card">
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="card">
       <h2 className="text-xl font-semibold mb-6">Campaign Details</h2>
 
       <div className="space-y-6">
-        {/* Product Selection */}
-        <div>
-          <label className="label">Product</label>
-          <select
-            {...register('product_id', { required: 'Product is required' })}
-            className="input-field"
-            defaultValue={currentSetup?.product_id || ''}
-          >
-            <option value="">Select a product</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.product_name}
-              </option>
-            ))}
-          </select>
-          {errors.product_id && (
-            <p className="text-red-500 text-sm mt-1">{errors.product_id.message}</p>
-          )}
-        </div>
-
         {/* Campaign Name */}
         <div>
           <label className="label">Campaign Name</label>
@@ -157,12 +145,20 @@ export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: 
         {/* Customer Segment */}
         <div>
           <label className="label">Customer Segment</label>
-          <input
-            type="text"
-            {...register('customer_segment')}
+          <select
+            {...register('customer_segment', { required: 'Customer segment is required' })}
             className="input-field"
-            placeholder="e.g., Young Professionals, Eco-Conscious Consumers"
-          />
+          >
+            <option value="">Select a segment...</option>
+            {segments.map((segment) => (
+              <option key={segment.id} value={segment.name}>
+                {segment.name} ({segment.size}%)
+              </option>
+            ))}
+          </select>
+          {errors.customer_segment && (
+            <p className="text-red-500 text-sm mt-1">{errors.customer_segment.message}</p>
+          )}
         </div>
 
         {/* Frequency */}

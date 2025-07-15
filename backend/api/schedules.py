@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
 from uuid import UUID
@@ -156,10 +156,13 @@ async def delete_schedule(
 @router.get("/upcoming", response_model=List[ScheduleResponse])
 async def get_upcoming_schedules(
     session: Session = Depends(get_session),
-    days: int = 7
+    days: Optional[int] = Query(7, description="Number of days to look ahead")
 ):
     """Get upcoming schedules for the next N days"""
     from datetime import timedelta
+    
+    if days is None:
+        days = 7
     
     now = datetime.utcnow()
     end_date = now + timedelta(days=days)

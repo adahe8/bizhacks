@@ -1,3 +1,4 @@
+# backend/external_apis/email_client.py
 import httpx
 from typing import Dict, Any
 from datetime import datetime

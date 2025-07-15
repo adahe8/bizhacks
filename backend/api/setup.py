@@ -1,3 +1,4 @@
+# backend/api/setup.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List, Optional

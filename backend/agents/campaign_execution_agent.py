@@ -40,7 +40,7 @@ def create_execution_agent(channel: str) -> Agent:
 def create_execution_task(agent: Agent, channel: str, campaign_id: Union[str, UUID]) -> Task:
     """Create task for campaign execution"""
     # Ensure campaign_id is string for task description
-    campaign_id_str = ensure_str(campaign_id)
+    campaign_id_str = str(campaign_id)
     
     task = Task(
         description=f"""
@@ -72,7 +72,7 @@ async def execute_campaign_content(
     """Execute campaign by publishing content to the specified channel"""
     
     # Ensure campaign_id is UUID for database operations
-    campaign_uuid = ensure_uuid(campaign_id)
+    campaign_uuid = campaign_id
     
     # Import the appropriate client based on channel
     if channel == "facebook":
@@ -115,7 +115,7 @@ async def execute_campaign_content(
             
             return {
                 "status": "success",
-                "asset_id": ensure_str(asset.id),
+                "asset_id": asset.id,
                 "published_at": asset.published_at.isoformat(),
                 "platform_response": publish_result
             }

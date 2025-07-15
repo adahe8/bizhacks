@@ -1,0 +1,13 @@
+id,campaign_id,platform,asset_type,copy_text,visual_url,status
+2970bdc9-bf33-4918-a778-3bcd5748c3d2,3e2bad64-e5b5-48ad-bd1a-9ce04817f766,Facebook,Video,Promo content for Hydration Boost,https://example.com/assets/2970bdc9.jpg,Approved
+29f9aca9-55db-413b-92ab-ac9e4bb14e99,d77ec810-6e37-4c6f-8513-61cb86bc636d,Google Ads SEO,Text,Promo content for Minimalist Beauty,https://example.com/assets/29f9aca9.jpg,In Review
+462871ec-4da0-4841-901a-6927927cd3f5,a056a641-9708-4ccb-a39d-314063245815,Email,Carousel,Promo content for Glow Up Summer,https://example.com/assets/462871ec.jpg,Approved
+5536f063-b480-4f0c-a049-9bc9958f8df6,bc026308-62cb-4877-9209-322fd2e6acd9,Email,Video,Promo content for Minimalist Beauty,https://example.com/assets/5536f063.jpg,Approved
+6c7a0c29-694b-4bcb-b7c0-4799eb9b49b4,3872d61a-7177-4dc2-9379-7284c670c93d,Email,Carousel,Promo content for Radiance Routine,https://example.com/assets/6c7a0c29.jpg,In Review
+91b37dfe-8732-48a9-827c-5d745e38b43d,62fd6be4-7ab4-47ff-957d-13ce387bc459,Email,Banner,Promo content for Radiance Routine,https://example.com/assets/91b37dfe.jpg,Draft
+a1444ded-1df7-48cd-8c8a-fbdf5c3b4e7a,67716ddf-8f23-4aab-b284-88da60c6627d,Facebook,Banner,Promo content for Minimalist Beauty,https://example.com/assets/a1444ded.jpg,Approved
+c77fd2a4-3078-463e-932c-00bfb0516a0e,85601460-cedf-48eb-bcdb-5e094ae8b6c2,Email,Text,Promo content for Clear Skin Challenge,https://example.com/assets/c77fd2a4.jpg,Draft
+d3c6ddb4-2259-4bd2-9559-716fd761faf5,328c6bc4-6488-4498-9dbf-6d563b092947,Google Ads SEO,Carousel,Promo content for Radiance Routine,https://example.com/assets/d3c6ddb4.jpg,Approved
+e30b3595-8a04-4bc8-8a9b-e3478d86551a,29348889-291c-4ad3-a6fa-d9c234fc071b,Facebook,Header,Promo content for Hydration Boost,https://example.com/assets/e30b3595.jpg,Approved
+e3a6db4c-f35c-44f3-bbdd-b2053b251f4d,d06d750b-6f64-4754-a4ae-32ad0781ebdf,Email,Text,Promo content for Festival Ready,https://example.com/assets/e3a6db4c.jpg,In Review
+fcbe37e8-988b-4a39-bd66-c93578c25533,e9c3201d-c03a-411a-96be-7607cefc6395,Facebook,Banner,Promo content for Hydration Boost,https://example.com/assets/fcbe37e8.jpg,In Review

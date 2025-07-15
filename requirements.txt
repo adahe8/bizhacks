@@ -1,0 +1,45 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlmodel
+alembic
+
+# AI/ML
+crewai
+google-generativeai
+langchain
+langchain-google-genai
+
+# Scheduling
+apscheduler
+
+# Data Processing
+pandas
+numpy
+pydantic
+pydantic-settings
+
+# API Clients
+httpx
+aiohttp
+
+# Utilities
+python-dotenv
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
+python-dateutil
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov
+
+# Development
+black
+flake8
+mypy
+pre-commit

@@ -10,8 +10,6 @@ export default function CustomerSegments({ segments }: Props) {
       'bg-blue-100 text-blue-800',
       'bg-green-100 text-green-800',
       'bg-purple-100 text-purple-800',
-      'bg-pink-100 text-pink-800',
-      'bg-yellow-100 text-yellow-800',
     ];
     return colors[index % colors.length];
   };
@@ -56,13 +54,46 @@ export default function CustomerSegments({ segments }: Props) {
     );
   };
 
+  const renderPurchaseInfo = (criteria: any) => {
+    if (!criteria) return null;
+    
+    const avgPurchases = criteria.avg_purchases || 0;
+    const purchaseRange = criteria.purchase_range || 'N/A';
+    const highPurchasersPct = criteria.high_purchasers_pct || 0;
+    const noPurchasePct = criteria.no_purchase_pct || 0;
+    
+    return (
+      <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+        <p className="font-medium text-gray-700">Purchase Patterns:</p>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <div>
+            <span className="text-gray-500">Avg Purchases:</span>
+            <span className="ml-1 font-medium">{avgPurchases.toFixed(1)}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Range:</span>
+            <span className="ml-1 font-medium">{purchaseRange}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Frequent Buyers:</span>
+            <span className="ml-1 font-medium text-green-600">{highPurchasersPct}%</span>
+          </div>
+          <div>
+            <span className="text-gray-500">No Purchases:</span>
+            <span className="ml-1 font-medium text-red-600">{noPurchasePct}%</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (segments.length === 0) {
     return (
-      <div className="card">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="text-center py-8">
           <p className="text-gray-500">No customer segments defined yet.</p>
           <p className="text-sm text-gray-400 mt-2">
-            AI will generate segments based on your user data.
+            AI will generate up to 3 segments based on your user data.
           </p>
         </div>
       </div>
@@ -70,9 +101,9 @@ export default function CustomerSegments({ segments }: Props) {
   }
 
   return (
-    <div className="card">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <div className="space-y-4">
-        {segments.map((segment, index) => {
+        {segments.slice(0, 3).map((segment, index) => {
           const channelDist = segment.channel_distribution ? 
             (typeof segment.channel_distribution === 'string' ? 
               JSON.parse(segment.channel_distribution) : 
@@ -103,12 +134,15 @@ export default function CustomerSegments({ segments }: Props) {
               </div>
               
               {criteria && (
-                <div className="mt-2 text-xs text-gray-500">
-                  <p>Age: {criteria.age_range || criteria.avg_age || 'Various'}</p>
-                  {criteria.top_locations && (
-                    <p>Locations: {criteria.top_locations.slice(0, 2).join(', ')}</p>
-                  )}
-                </div>
+                <>
+                  <div className="mt-2 text-xs text-gray-500">
+                    <p>Age: {criteria.age_range || criteria.avg_age || 'Various'}</p>
+                    {criteria.top_locations && (
+                      <p>Locations: {criteria.top_locations.slice(0, 2).join(', ')}</p>
+                    )}
+                  </div>
+                  {renderPurchaseInfo(criteria)}
+                </>
               )}
               
               {channelDist && renderChannelBar(channelDist)}
@@ -120,10 +154,10 @@ export default function CustomerSegments({ segments }: Props) {
       <div className="mt-6 pt-4 border-t">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
-            Total Segments: {segments.length}
+            Total Segments: {Math.min(segments.length, 3)}
           </p>
           <p className="text-sm text-gray-500">
-            Coverage: {segments.reduce((sum, seg) => sum + (seg.size || 0), 0)}%
+            Coverage: {segments.slice(0, 3).reduce((sum, seg) => sum + (seg.size || 0), 0).toFixed(1)}%
           </p>
         </div>
       </div>

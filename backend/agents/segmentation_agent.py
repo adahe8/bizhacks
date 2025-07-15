@@ -148,31 +148,34 @@ async def generate_customer_segments(
             # Create naming task
             task_description = f"""
             Based on the following customer clusters, create memorable names and descriptions for each segment.
-            
+
             Product: {product.product_name} - {product.description}
             Market Context: {json.dumps(market_details)}
             Strategic Goals: {strategic_goals}
-            
+
             Clusters Data:
             {json.dumps(clusters_data, indent=2)}
-            
+
             For each cluster, provide:
-            1. A catchy, memorable name (2-3 words max)
+            1. A UNIQUE catchy, memorable name (2-3 words max) - Each name MUST be different
             2. A brief description (1-2 sentences) that captures their key characteristics
-            
+
             Focus on:
             - Age demographics
             - Channel preferences (Email, Facebook, Google)
-            - Purchase behavior
+            - PURCHASE BEHAVIOR (average purchases, high vs low purchasers)
             - Location patterns
             - Skin type (if relevant)
-            
+
+            IMPORTANT: All {len(clusters_data)} segment names must be completely unique and different from each other.
+
             Return as JSON array with objects containing: cluster_id, name, description
-            
+
             Example format:
             [
-                {{"cluster_id": 0, "name": "Digital Natives", "description": "Young, tech-savvy customers who engage across all channels."}},
-                {{"cluster_id": 1, "name": "Email Loyalists", "description": "Mature customers who prefer email communication and have high purchase frequency."}}
+                {{"cluster_id": 0, "name": "Digital Natives", "description": "Young, tech-savvy customers who engage across all channels with high purchase frequency."}},
+                {{"cluster_id": 1, "name": "Email Loyalists", "description": "Mature customers who prefer email communication and have moderate purchase activity."}},
+                {{"cluster_id": 2, "name": "Social Browsers", "description": "Facebook-focused users with low purchase history, primarily window shopping."}}
             ]
             """
             
@@ -189,7 +192,9 @@ async def generate_customer_segments(
             
             # Parse the result
             segment_names = json.loads(result)
-            logger.info(f"Successfully generated {len(segment_names)} AI segment names")
+            # Ensure unique names
+            segment_names = ensure_unique_segment_names(segment_names)
+            logger.info(f"Successfully generated {len(segment_names)} unique AI segment names")
             for name in segment_names:
                 logger.debug(f"Segment {name['cluster_id']}: {name['name']} - {name['description']}")
             
@@ -241,9 +246,25 @@ def generate_default_segment_names(clusters_data: List[Dict[str, Any]]) -> List[
     logger.debug("Generating default segment names...")
     default_names = []
     
+    # Pre-define unique name patterns to avoid duplicates
+    name_patterns = [
+        ("Premium", "High-Value"),
+        ("Engaged", "Active"),
+        ("Potential", "Emerging")
+    ]
+    
     for i, cluster in enumerate(clusters_data):
         characteristics = cluster.get("characteristics", {})
         channel_dist = cluster.get("channel_distribution", {})
+        
+        # Determine purchase level
+        avg_purchases = characteristics.get("avg_purchases", 0)
+        if avg_purchases >= 2:
+            purchase_level = "Frequent Buyers"
+        elif avg_purchases >= 1:
+            purchase_level = "Regular Shoppers"
+        else:
+            purchase_level = "New Prospects"
         
         # Determine primary channel
         primary_channel = max(channel_dist.items(), key=lambda x: x[1])[0] if channel_dist else "multi"
@@ -254,27 +275,12 @@ def generate_default_segment_names(clusters_data: List[Dict[str, Any]]) -> List[
             "multi": "Multi-Channel"
         }.get(primary_channel, "Digital")
         
-        # Determine age group
-        avg_age = characteristics.get("avg_age", 30)
-        if avg_age < 25:
-            age_group = "Young"
-        elif avg_age < 35:
-            age_group = "Millennial"
-        elif avg_age < 50:
-            age_group = "Mid-Age"
-        else:
-            age_group = "Mature"
+        # Use pattern to ensure uniqueness
+        pattern = name_patterns[i % len(name_patterns)]
+        name = f"{pattern[0]} {channel_name} {purchase_level}"
         
-        # Create name and description
-        name = f"{age_group} {channel_name} Users"
         description = f"Customers aged {characteristics.get('age_range', 'various')} who primarily engage via {primary_channel}. "
-        
-        if characteristics.get("avg_purchases", 0) > 2:
-            description += "High purchase frequency."
-        elif characteristics.get("avg_purchases", 0) > 0:
-            description += "Regular buyers."
-        else:
-            description += "New or potential customers."
+        description += f"Average {avg_purchases:.1f} purchases per user, with {characteristics.get('high_purchasers_pct', 0)}% being frequent buyers."
         
         default_names.append({
             "cluster_id": i,
@@ -285,3 +291,25 @@ def generate_default_segment_names(clusters_data: List[Dict[str, Any]]) -> List[
         logger.debug(f"Default name for cluster {i}: {name}")
     
     return default_names
+
+def ensure_unique_segment_names(segment_names: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ensure all segment names are unique by appending numbers if needed"""
+    seen_names = {}
+    unique_names = []
+    
+    for segment in segment_names:
+        base_name = segment.get("name", f"Segment {segment.get('cluster_id', 0) + 1}")
+        
+        if base_name in seen_names:
+            seen_names[base_name] += 1
+            unique_name = f"{base_name} {seen_names[base_name]}"
+        else:
+            seen_names[base_name] = 1
+            unique_name = base_name
+        
+        unique_names.append({
+            **segment,
+            "name": unique_name
+        })
+    
+    return unique_names

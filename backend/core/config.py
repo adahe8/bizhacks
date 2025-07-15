@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     DEFAULT_GAME_SPEED: str = "medium"
     
     # Clustering Settings
-    NUM_CLUSTERS: int = 4
+    NUM_CLUSTERS: int = 3
     CLUSTER_RANDOM_STATE: int = 42
     
     # Channel Metrics Configuration

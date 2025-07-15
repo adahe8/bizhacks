@@ -51,6 +51,8 @@ class BudgetRebalanceResponse(BaseModel):
     new_budget: float
     reason: str
 
+from sqlmodel import Session, select, delete
+
 @router.post("/segment")
 async def create_customer_segments(
     background_tasks: BackgroundTasks,
@@ -72,13 +74,11 @@ async def create_customer_segments(
         
         logger.info(f"Found active setup: ID={setup.id}, Product={setup.product_id}, Budget=${setup.monthly_budget}")
         
-        # Delete existing segments before generating new ones
-        logger.debug("Deleting existing customer segments...")
-        existing_segments = session.exec(select(CustomerSegment)).all()
-        for segment in existing_segments:
-            session.delete(segment)
+        # Delete ALL existing segments to prevent duplicates
+        logger.debug("Deleting ALL existing customer segments...")
+        session.exec(delete(CustomerSegment))  # Use delete statement
         session.commit()
-        logger.info(f"Deleted {len(existing_segments)} existing segments")
+        logger.info("Cleared all existing segments")
         
         # Generate segments
         logger.info("Calling generate_customer_segments...")
@@ -91,46 +91,28 @@ async def create_customer_segments(
             
             logger.info(f"Generated {len(segments)} segments from segmentation agent")
             
-            # Save segments to database
-            saved_segments = []
-            for i, segment in enumerate(segments):
-                logger.debug(f"Processing segment {i+1}: {segment.get('name', 'Unknown')}")
-                
-                # Extract segment data
-                segment_name = segment.get("name", f"Segment {i+1}")
-                segment_desc = segment.get("description", "")
-                segment_size = segment.get("size", 0)
-                segment_criteria = segment.get("criteria", {})
-                segment_channel_dist = segment.get("channel_distribution", {})
-                
-                logger.debug(f"Segment data - Name: {segment_name}, Size: {segment_size}%, Channels: {segment_channel_dist}")
-                
-                db_segment = CustomerSegment(
-                    name=segment_name,
-                    description=segment_desc,
-                    criteria=json.dumps(segment_criteria) if isinstance(segment_criteria, dict) else segment_criteria,
-                    size=float(segment_size) if segment_size else 0.0,  # ✅ FIXED: Ensure float type
-                    channel_distribution=json.dumps(segment_channel_dist) if isinstance(segment_channel_dist, dict) else segment_channel_dist
-                )
-                session.add(db_segment)
-                saved_segments.append(db_segment)
+            # Verify we have exactly 3 segments (or less)
+            if len(segments) > 3:
+                logger.warning(f"Generated {len(segments)} segments, limiting to 3")
+                segments = segments[:3]
             
-            session.commit()
-            logger.info(f"Successfully saved {len(saved_segments)} segments to database")
+            # The segments are already saved by generate_customer_segments
+            # Just need to fetch them for response
+            saved_segments = session.exec(select(CustomerSegment)).all()
             
-            # Refresh to get IDs
-            for segment in saved_segments:
-                session.refresh(segment)
+            # Double-check we don't have duplicates
+            if len(saved_segments) != len(segments):
+                logger.warning(f"Mismatch: generated {len(segments)} but saved {len(saved_segments)}")
             
             response_data = {
-                "message": "Customer segments generated successfully",
+                "message": f"Generated {len(saved_segments)} unique customer segments successfully",
                 "segments": [
                     SegmentResponse(
                         id=seg.id,
                         name=seg.name,
                         description=seg.description,
                         criteria=seg.criteria,
-                        size=seg.size  # Now this will be float, matching the model
+                        size=seg.size
                     )
                     for seg in saved_segments
                 ]
@@ -139,17 +121,51 @@ async def create_customer_segments(
             logger.info("=== Customer segment generation completed successfully ===")
             return response_data
             
+        except ValueError as e:
+            # Handle specific value errors (e.g., invalid product ID)
+            logger.error(f"ValueError in generate_customer_segments: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=400, detail=f"Invalid data: {str(e)}")
+            
+        except json.JSONDecodeError as e:
+            # Handle JSON parsing errors
+            logger.error(f"JSON decode error: {str(e)}")
+            logger.error(f"Market details: {setup.market_details}")
+            raise HTTPException(status_code=500, detail="Error parsing configuration data")
+            
         except Exception as e:
+            # Handle any other errors from generate_customer_segments
             logger.error(f"Error in generate_customer_segments: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Check if it's a Gemini API key error
+            if "GEMINI_API_KEY" in str(e):
+                raise HTTPException(
+                    status_code=503, 
+                    detail="AI service not configured. Please check your GEMINI_API_KEY configuration."
+                )
+            
             raise HTTPException(status_code=500, detail=f"Error generating segments: {str(e)}")
             
     except HTTPException:
+        # Re-raise HTTP exceptions
         raise
+        
     except Exception as e:
+        # Catch any other unexpected errors
         logger.error(f"Unexpected error in create_customer_segments: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        
+        # Rollback any database changes
+        session.rollback()
+        
+        # Provide user-friendly error message
+        if "database" in str(e).lower():
+            raise HTTPException(status_code=500, detail="Database error. Please try again.")
+        elif "connection" in str(e).lower():
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable. Please try again.")
+        else:
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @router.get("/segments", response_model=List[SegmentResponse])
 async def get_customer_segments(session: Session = Depends(get_session)):

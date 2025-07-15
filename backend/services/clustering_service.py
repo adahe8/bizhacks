@@ -133,6 +133,8 @@ class ClusteringService:
             "top_locations": cluster_df['location'].value_counts().head(3).index.tolist(),
             "top_skin_types": cluster_df['skin_type'].value_counts().head(2).index.tolist(),
             "avg_purchases": round(cluster_df['num_purchases'].mean(), 1),
+            "purchase_range": f"{int(cluster_df['num_purchases'].min())}-{int(cluster_df['num_purchases'].max())}",
+            "high_purchasers_pct": round((cluster_df['num_purchases'] >= 2).sum() / len(cluster_df) * 100, 1),
             "multi_channel_users": round((cluster_df['num_channels'] > 1).sum() / len(cluster_df) * 100, 1)
         }
         logger.debug(f"Cluster characteristics: {characteristics}")

@@ -57,9 +57,9 @@ source venv/bin/activate
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Create demo CSV files (if they don't exist)
 cd backend
-python -c "import sys; sys.path.append('..'); from data.demo_loader import create_demo_files; create_demo_files()"
+# Create demo CSV files (if they don't exist)
+# python -c "import sys; sys.path.append('..'); from data.demo_loader import create_demo_files; create_demo_files()"
 
 # The database will be initialized automatically when you start the server
 # If you need to manually initialize or reset the database:

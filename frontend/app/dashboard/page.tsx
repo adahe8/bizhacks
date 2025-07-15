@@ -1,7 +1,10 @@
+// frontend/app/dashboard/page.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
-import { campaignApi, metricsApi, agentApi, setupApi } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { campaignApi, metricsApi, agentApi, setupApi, gameStateApi } from '@/lib/api';
 import MetricsVisualization from '@/components/MetricsVisualization';
 import CampaignCard from '@/components/CampaignCard';
 import CustomerSegments from '@/components/CustomerSegments';
@@ -12,6 +15,7 @@ import SpendOptimizationChart from '../../components/SpendOptimizationChart';
 import { Campaign, ChannelMetrics, CustomerSegment, Schedule, Company, Product } from '@/lib/types';
 
 export default function Dashboard() {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [channelMetrics, setChannelMetrics] = useState<ChannelMetrics[]>([]);
   const [segments, setSegments] = useState<CustomerSegment[]>([]);
@@ -21,17 +25,44 @@ export default function Dashboard() {
   const [optimizationData, setOptimizationData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [gameDate, setGameDate] = useState(new Date());
+  const [showSetupIncomplete, setShowSetupIncomplete] = useState(false);
 
   useEffect(() => {
-    loadDashboardData();
+    checkSetupAndLoadData();
   }, []);
 
-  const loadDashboardData = async () => {
+  const checkSetupAndLoadData = async () => {
     try {
-      // First get setup configuration
+      // First check if setup is complete
       const setup = await setupApi.getCurrent();
-      if (setup && setup.company_id && setup.product_id) {
-        // Load company and product info
+      
+      if (!setup || !setup.is_active) {
+        // No setup or inactive, redirect to home for wizard
+        router.push('/');
+        return;
+      }
+      
+      // Check if setup has all required fields
+      if (!setup.company_id || !setup.product_id || !setup.monthly_budget) {
+        setShowSetupIncomplete(true);
+        setLoading(false);
+        return;
+      }
+      
+      // Setup is complete, load dashboard data
+      await loadDashboardData(setup);
+      
+    } catch (error) {
+      console.error('Error checking setup:', error);
+      // On error, redirect to setup wizard
+      router.push('/');
+    }
+  };
+
+  const loadDashboardData = async (setup: any) => {
+    try {
+      // Load company and product info
+      if (setup.company_id && setup.product_id) {
         const [companies, products] = await Promise.all([
           setupApi.getCompanies(),
           setupApi.getProducts()
@@ -44,45 +75,32 @@ export default function Dashboard() {
         setProduct(currentProduct);
       }
 
-      // Load other dashboard data
-      const [campaignsData, metricsData, segmentsData] = await Promise.all([
+      // Load other dashboard data in parallel
+      const [campaignsData, metricsData, segmentsData, optimizationData] = await Promise.all([
         campaignApi.list({ status: 'active' }),
         metricsApi.getChannelMetrics(7),
-        agentApi.getSegments()
+        agentApi.getSegments(),
+        gameStateApi.getOptimizationData(30) // Get real optimization data
       ]);
 
       setCampaigns(campaignsData);
       setChannelMetrics(metricsData);
       setSegments(segmentsData);
       
-      // Generate mock optimization data
-      const mockOptData = generateMockOptimizationData();
-      setOptimizationData(mockOptData);
+      // Process optimization data for the chart
+      const processedOptData = optimizationData.map((item: any) => ({
+        date: new Date(item.date),
+        optimal: item.optimal,
+        nonOptimal: item.nonOptimal
+      }));
+      
+      setOptimizationData(processedOptData);
       
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const generateMockOptimizationData = () => {
-    const data = [];
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-    
-    for (let i = 0; i <= 30; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      
-      data.push({
-        date,
-        optimal: 1000 + (i * 150) + Math.random() * 100,
-        nonOptimal: 1000 + (i * 100) + Math.random() * 50
-      });
-    }
-    
-    return data;
   };
 
   const handleCampaignUpdate = async () => {
@@ -92,12 +110,46 @@ export default function Dashboard() {
 
   const handleDateChange = (date: Date) => {
     setGameDate(date);
+    // Optionally reload optimization data when date changes
+    refreshOptimizationData();
+  };
+
+  const refreshOptimizationData = async () => {
+    try {
+      const optimizationData = await gameStateApi.getOptimizationData(30);
+      const processedOptData = optimizationData.map((item: any) => ({
+        date: new Date(item.date),
+        optimal: item.optimal,
+        nonOptimal: item.nonOptimal
+      }));
+      setOptimizationData(processedOptData);
+    } catch (error) {
+      console.error('Error refreshing optimization data:', error);
+    }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (showSetupIncomplete) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Incomplete</h2>
+          <p className="text-gray-600 mb-4">Please complete the setup wizard to continue.</p>
+          <button
+            onClick={() => router.push('/')}
+            className="btn-primary"
+          >
+            Complete Setup
+          </button>
+        </div>
       </div>
     );
   }
@@ -119,7 +171,24 @@ export default function Dashboard() {
 
       {/* Optimization Performance Chart */}
       <div className="mb-8">
-        <SpendOptimizationChart data={optimizationData} />
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Optimization Performance</h2>
+            <button
+              onClick={refreshOptimizationData}
+              className="text-sm text-primary-600 hover:text-primary-700"
+            >
+              Refresh Data
+            </button>
+          </div>
+          <SpendOptimizationChart data={optimizationData} />
+          {optimizationData.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <p>No optimization data available yet.</p>
+              <p className="text-sm mt-2">Run campaigns to see performance metrics.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Channel Metrics */}
@@ -182,6 +251,7 @@ export default function Dashboard() {
           <button
             onClick={async () => {
               await metricsApi.collectMetrics();
+              await refreshOptimizationData();
               alert('Metrics collection triggered');
             }}
             className="btn-outline"
@@ -206,6 +276,12 @@ export default function Dashboard() {
             className="btn-outline"
           >
             Update Segments
+          </button>
+          <button
+            onClick={() => router.push('/')}
+            className="btn-outline"
+          >
+            Run Setup Wizard
           </button>
         </div>
       </div>

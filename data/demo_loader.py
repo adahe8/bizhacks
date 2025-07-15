@@ -82,41 +82,44 @@ def load_demo_data():
             if os.path.exists(os.path.join(demo_path, "content_assets.csv")):
                 logger.info("Loading content assets...")
                 assets_df = pd.read_csv(os.path.join(demo_path, "content_assets.csv"))
-                for _, row in assets_df.iterrows():
-                    asset = ContentAsset(
-                        id=UUID(row['id']) if 'id' in row and pd.notna(row['id']) else None,
-                        campaign_id=UUID(row['campaign_id']) if 'campaign_id' in row and pd.notna(row['campaign_id']) else None,
-                        platform=row.get('platform'),
-                        asset_type=row.get('asset_type'),
-                        copy_text=row.get('copy_text'),
-                        visual_url=row.get('visual_url'),
-                        status=row.get('status', 'draft')
-                    )
-                    session.add(asset)
-                session.commit()
-                logger.info(f"Loaded {len(assets_df)} content assets")
+                if not assets_df.empty:
+                    for _, row in assets_df.iterrows():
+                        asset = ContentAsset(
+                            id=UUID(row['id']) if 'id' in row and pd.notna(row['id']) else None,
+                            campaign_id=UUID(row['campaign_id']) if 'campaign_id' in row and pd.notna(row['campaign_id']) else None,
+                            platform=row.get('platform'),
+                            asset_type=row.get('asset_type'),
+                            copy_text=row.get('copy_text'),
+                            visual_url=row.get('visual_url'),
+                            status=row.get('status', 'draft')
+                        )
+                        session.add(asset)
+                    session.commit()
+                    logger.info(f"Loaded {len(assets_df)} content assets")
             
             # Load metrics
             if os.path.exists(os.path.join(demo_path, "metrics.csv")):
                 logger.info("Loading metrics...")
                 metrics_df = pd.read_csv(os.path.join(demo_path, "metrics.csv"))
-                for _, row in metrics_df.iterrows():
-                    metric = Metric(
-                        id=UUID(row['id']) if 'id' in row and pd.notna(row['id']) else None,
-                        campaign_id=UUID(row['campaign_id']) if 'campaign_id' in row and pd.notna(row['campaign_id']) else None,
-                        platform=row.get('platform'),
-                        clicks=int(row['clicks']) if pd.notna(row.get('clicks')) else 0,
-                        impressions=int(row['impressions']) if pd.notna(row.get('impressions')) else 0,
-                        engagement_rate=float(row['engagement_rate']) if pd.notna(row.get('engagement_rate')) else 0.0,
-                        conversion_rate=float(row['conversion_rate']) if pd.notna(row.get('conversion_rate')) else 0.0,
-                        cpa=float(row['cpa']) if pd.notna(row.get('cpa')) else 0.0,
-                        timestamp=pd.to_datetime(row['timestamp']) if 'timestamp' in row and pd.notna(row['timestamp']) else datetime.utcnow()
-                    )
-                    session.add(metric)
-                session.commit()
-                logger.info(f"Loaded {len(metrics_df)} metrics")
-                
-            logger.info("Demo data loaded successfully")
+                if not metrics_df.empty:
+                    for _, row in metrics_df.iterrows():
+                        metric = Metric(
+                            id=UUID(row['id']) if 'id' in row and pd.notna(row['id']) else None,
+                            campaign_id=UUID(row['campaign_id']) if 'campaign_id' in row and pd.notna(row['campaign_id']) else None,
+                            platform=row.get('platform'),
+                            clicks=int(row['clicks']) if pd.notna(row.get('clicks')) else 0,
+                            impressions=int(row['impressions']) if pd.notna(row.get('impressions')) else 0,
+                            engagement_rate=float(row['engagement_rate']) if pd.notna(row.get('engagement_rate')) else 0.0,
+                            conversion_rate=float(row['conversion_rate']) if pd.notna(row.get('conversion_rate')) else 0.0,
+                            cpa=float(row['cpa']) if pd.notna(row.get('cpa')) else 0.0,
+                            timestamp=pd.to_datetime(row['timestamp']) if 'timestamp' in row and pd.notna(row['timestamp']) else datetime.utcnow()
+                        )
+                        session.add(metric)
+                    session.commit()
+                    logger.info(f"Loaded {len(metrics_df)} metrics")
+            
+            # NOTE: Not loading any SetupConfiguration to ensure wizard runs
+            logger.info("Demo data loaded successfully (no setup configuration)")
             
         except Exception as e:
             logger.error(f"Error loading demo data: {str(e)}")

@@ -1,12 +1,12 @@
 # backend/api/gamestate.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from data.database import get_session
-from data.models import GameState
+from data.models import GameState, Metric, Campaign
 
 router = APIRouter()
 
@@ -24,6 +24,11 @@ class GameStateResponse(BaseModel):
     total_reach_non_optimal: float
     created_at: datetime
     updated_at: datetime
+
+class OptimizationDataPoint(BaseModel):
+    date: str
+    optimal: float
+    nonOptimal: float
 
 @router.get("/current", response_model=Optional[GameStateResponse])
 async def get_game_state(session: Session = Depends(get_session)):
@@ -91,3 +96,70 @@ async def reset_game_state(session: Session = Depends(get_session)):
         session.commit()
     
     return {"message": "Game state reset successfully"}
+
+@router.get("/optimization-data", response_model=List[OptimizationDataPoint])
+async def get_optimization_data(
+    days: int = 30,
+    session: Session = Depends(get_session)
+):
+    """Get optimization performance data for the specified number of days"""
+    # Get metrics for the last N days
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # Query metrics grouped by date
+    metrics_query = select(Metric).where(
+        Metric.timestamp >= start_date,
+        Metric.timestamp <= end_date
+    ).order_by(Metric.timestamp)
+    
+    metrics = session.exec(metrics_query).all()
+    
+    # Get active campaigns to determine if they're optimized
+    active_campaigns = session.exec(
+        select(Campaign).where(Campaign.status == "active")
+    ).all()
+    
+    # Group metrics by date and calculate reach
+    daily_data = {}
+    for metric in metrics:
+        date_key = metric.timestamp.date() if metric.timestamp else datetime.utcnow().date()
+        
+        if date_key not in daily_data:
+            daily_data[date_key] = {
+                "optimal": 0.0,
+                "nonOptimal": 0.0
+            }
+        
+        # Calculate reach (impressions * engagement_rate)
+        reach = (metric.impressions or 0) * (metric.engagement_rate or 0.01)
+        
+        # Determine if this campaign is optimized based on performance
+        # (You can adjust this logic based on your optimization criteria)
+        is_optimized = (metric.engagement_rate or 0) > 0.03 and (metric.conversion_rate or 0) > 0.01
+        
+        if is_optimized:
+            daily_data[date_key]["optimal"] += reach
+        else:
+            daily_data[date_key]["nonOptimal"] += reach
+    
+    # If no real data, provide a baseline
+    if not daily_data:
+        # Provide baseline data showing system is ready for optimization
+        for i in range(min(days, 7)):
+            date = end_date - timedelta(days=i)
+            daily_data[date.date()] = {
+                "optimal": 0.0,
+                "nonOptimal": 0.0
+            }
+    
+    # Convert to response format
+    result = []
+    for date, values in sorted(daily_data.items()):
+        result.append(OptimizationDataPoint(
+            date=date.isoformat(),
+            optimal=values["optimal"],
+            nonOptimal=values["nonOptimal"]
+        ))
+    
+    return result

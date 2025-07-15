@@ -1,3 +1,4 @@
+# backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from typing import Dict
 from core.config import settings
 from core.scheduler import scheduler
 from data.database import init_db
-from api import campaigns, schedules, agents, setup, metrics
+from api import campaigns, schedules, agents, setup, metrics, gamestate
 from external_apis.mock_media import router as mock_router
 
 # Configure logging
@@ -59,6 +60,7 @@ app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"]
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
 app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
 app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
+app.include_router(gamestate.router, prefix="/api/gamestate", tags=["gamestate"])
 
 # Include mock endpoints for development
 app.include_router(mock_router, prefix="/mock", tags=["mock"])

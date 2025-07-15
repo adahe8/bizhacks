@@ -1,3 +1,5 @@
+// frontend/app/page.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -22,6 +24,8 @@ type SetupStep =
 export default function Home() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<SetupStep | null>(null);
+  const [isExistingSetup, setIsExistingSetup] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [setupData, setSetupData] = useState({
     company_id: '',
     product_id: '',
@@ -29,7 +33,7 @@ export default function Home() {
     strategic_goals: '',
     monthly_budget: 0,
     guardrails: '',
-    rebalancing_frequency: 'weekly',
+    rebalancing_frequency: 'weekly' as const,
     campaign_count: 5,
   });
 
@@ -40,21 +44,36 @@ export default function Home() {
   const checkExistingSetup = async () => {
     try {
       const setup = await setupApi.getCurrent();
+      
       if (setup && setup.is_active) {
-        // Setup exists, redirect to dashboard
-        router.push('/dashboard');
+        // Setup exists and is active
+        setIsExistingSetup(true);
+        setShowWelcome(true);
+        
+        // Check if all required fields are present
+        if (setup.company_id && setup.product_id && setup.monthly_budget > 0) {
+          // Complete setup exists, show welcome with options
+          setShowWelcome(true);
+        } else {
+          // Incomplete setup, restart wizard
+          setCurrentStep('firm');
+          setShowWelcome(false);
+        }
       } else {
-        // No setup, start onboarding
+        // No setup or inactive, start fresh
         setCurrentStep('firm');
+        setShowWelcome(false);
       }
     } catch (error) {
       console.error('Error checking setup:', error);
+      // On error, start fresh setup
       setCurrentStep('firm');
+      setShowWelcome(false);
     }
   };
 
   const handleStepComplete = (stepData: any) => {
-    setSetupData({ ...setupData, ...stepData });
+    setSetupData(prev => ({ ...prev, ...stepData }));
     
     // Move to next step
     const steps: SetupStep[] = ['firm', 'product', 'market', 'strategic', 'budget', 'guardrails'];
@@ -84,13 +103,29 @@ export default function Home() {
       // Redirect to dashboard after a brief delay
       setTimeout(() => {
         router.push('/dashboard');
-      }, 2000);
+      }, 3000);
     } catch (error) {
       console.error('Error completing setup:', error);
+      alert('Error completing setup. Please try again.');
     }
   };
 
-  if (currentStep === null) {
+  const startNewSetup = () => {
+    setShowWelcome(false);
+    setCurrentStep('firm');
+    setSetupData({
+      company_id: '',
+      product_id: '',
+      market_details: {},
+      strategic_goals: '',
+      monthly_budget: 0,
+      guardrails: '',
+      rebalancing_frequency: 'weekly',
+      campaign_count: 5,
+    });
+  };
+
+  if (currentStep === null && !showWelcome) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -98,13 +133,48 @@ export default function Home() {
     );
   }
 
+  if (showWelcome && isExistingSetup) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="bg-white rounded-lg p-8 max-w-md w-full animate-fade-up shadow-lg">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Welcome Back!</h1>
+            <p className="text-gray-600 mb-8">
+              You have an existing setup. What would you like to do?
+            </p>
+            <div className="space-y-4">
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="btn-primary w-full"
+              >
+                Go to Dashboard
+              </button>
+              <button
+                onClick={startNewSetup}
+                className="btn-outline w-full"
+              >
+                Run Setup Wizard Again
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mt-6">
+              Running the setup wizard will update your existing configuration.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (currentStep === 'complete') {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-lg p-8 shadow-lg">
           <div className="text-6xl mb-4">✨</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Complete!</h2>
-          <p className="text-gray-600">Generating customer segments...</p>
+          <p className="text-gray-600 mb-4">Generating customer segments...</p>
+          <div className="animate-pulse text-sm text-gray-500">
+            Redirecting to dashboard...
+          </div>
         </div>
       </div>
     );
@@ -112,46 +182,73 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
-      {currentStep === 'firm' && (
-        <FirmDetailsModal
-          onComplete={(data) => handleStepComplete({ company_id: data.company_id })}
-        />
+      {/* Progress Indicator */}
+      {currentStep && (
+        <div className="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl font-bold text-primary-600">BizHacks Setup Wizard</h1>
+              <button
+                onClick={() => {
+                  if (confirm('Are you sure you want to exit the setup wizard?')) {
+                    if (isExistingSetup) {
+                      router.push('/dashboard');
+                    } else {
+                      setShowWelcome(true);
+                    }
+                  }
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       
-      {currentStep === 'product' && (
-        <ProductDetailsModal
-          companyId={setupData.company_id}
-          onComplete={(data) => handleStepComplete({ product_id: data.product_id })}
-        />
-      )}
-      
-      {currentStep === 'market' && (
-        <MarketDetailsModal
-          onComplete={(data) => handleStepComplete({ market_details: data })}
-        />
-      )}
-      
-      {currentStep === 'strategic' && (
-        <StrategicGoalsModal
-          onComplete={(data) => handleStepComplete({ strategic_goals: data })}
-        />
-      )}
-      
-      {currentStep === 'budget' && (
-        <BudgetModal
-          onComplete={(data) => handleStepComplete({
-            monthly_budget: data.budget,
-            rebalancing_frequency: data.frequency,
-            campaign_count: data.campaign_count,
-          })}
-        />
-      )}
-      
-      {currentStep === 'guardrails' && (
-        <GuardrailsModal
-          onComplete={(data) => handleStepComplete({ guardrails: data })}
-        />
-      )}
+      <div className={currentStep ? "pt-16" : ""}>
+        {currentStep === 'firm' && (
+          <FirmDetailsModal
+            onComplete={(data) => handleStepComplete({ company_id: data.company_id })}
+          />
+        )}
+        
+        {currentStep === 'product' && (
+          <ProductDetailsModal
+            companyId={setupData.company_id}
+            onComplete={(data) => handleStepComplete({ product_id: data.product_id })}
+          />
+        )}
+        
+        {currentStep === 'market' && (
+          <MarketDetailsModal
+            onComplete={(data) => handleStepComplete({ market_details: data })}
+          />
+        )}
+        
+        {currentStep === 'strategic' && (
+          <StrategicGoalsModal
+            onComplete={(data) => handleStepComplete({ strategic_goals: data })}
+          />
+        )}
+        
+        {currentStep === 'budget' && (
+          <BudgetModal
+            onComplete={(data) => handleStepComplete({
+              monthly_budget: data.budget,
+              rebalancing_frequency: data.frequency,
+              campaign_count: data.campaign_count,
+            })}
+          />
+        )}
+        
+        {currentStep === 'guardrails' && (
+          <GuardrailsModal
+            onComplete={(data) => handleStepComplete({ guardrails: data })}
+          />
+        )}
+      </div>
     </div>
   );
 }

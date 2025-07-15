@@ -1,5 +1,7 @@
+// frontend/lib/api.ts
+
 import axios from 'axios';
-import { Campaign, SetupConfig, CustomerSegment, CampaignIdea, Metric, Schedule } from './types';
+import { Campaign, SetupConfig, CustomerSegment, CampaignIdea, Metric, Schedule, OptimizationData } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -169,6 +171,31 @@ export const scheduleApi = {
     const response = await api.delete(`/api/schedules/${id}`);
     return response.data;
   },
+};
+
+// Game State API
+export const gameStateApi = {
+  getCurrent: async () => {
+    const response = await api.get('/api/gamestate/current');
+    return response.data;
+  },
+  
+  update: async (data: { current_date?: string; game_speed?: string; is_running?: boolean }) => {
+    const response = await api.put('/api/gamestate/current', data);
+    return response.data;
+  },
+  
+  reset: async () => {
+    const response = await api.post('/api/gamestate/reset');
+    return response.data;
+  },
+  
+  getOptimizationData: async (days: number = 30) => {
+    const response = await api.get<OptimizationData[]>('/api/gamestate/optimization-data', {
+      params: { days }
+    });
+    return response.data;
+  }
 };
 
 export default api;

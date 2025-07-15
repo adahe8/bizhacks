@@ -166,5 +166,11 @@ export interface ChannelMetrics {
   total_spend: number;
 }
 
+export interface OptimizationData {
+  date: string;
+  optimal: number;
+  nonOptimal: number;
+}
+
 // Alias for backward compatibility if needed
 export type SetupConfig = SetupConfiguration;

@@ -67,6 +67,7 @@ class Campaign(SQLModel, table=True):
     channel: str  # facebook, email, google_seo
     customer_segment: Optional[str] = Field(default=None)
     frequency: Optional[str] = Field(default=None)  # daily, weekly, monthly
+    start_date: Optional[datetime] = Field(default=None)  # NEW FIELD
     budget: float = Field(default=0.0)
     status: str = Field(default="draft")  # draft, active, paused, completed
     created_at: datetime = Field(default_factory=datetime.utcnow)

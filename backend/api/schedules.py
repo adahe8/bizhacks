@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from data.database import get_session
 from data.models import Schedule, Campaign
-from core.scheduler import schedule_campaign_execution, schedule_recurring_campaign, cancel_job
+from backend.core.scheduler import schedule_campaign_execution, schedule_recurring_campaign, cancel_job
 import uuid
 
 router = APIRouter()

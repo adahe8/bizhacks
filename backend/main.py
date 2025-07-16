@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 import logging
 from typing import Dict
 
-from core.config import settings
-from core.scheduler import scheduler
+from backend.core.config import settings
+from backend.core.scheduler import scheduler
 from data.database import init_db
 from api import campaigns, schedules, agents, setup, metrics, gamestate
 from external_apis.mock_media import router as mock_router

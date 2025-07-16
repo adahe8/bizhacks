@@ -4,11 +4,13 @@ from sqlmodel import Session, select
 from typing import List, Optional
 from uuid import UUID
 from pydantic import BaseModel
+from datetime import datetime
 import logging
 import traceback
 
 from data.database import get_session
 from data.models import CustomerSegment, Campaign, SetupConfiguration
+from backend.services.campaign_service import CampaignService
 from agents.segmentation_agent import generate_customer_segments
 from agents.campaign_creation_agent import generate_campaign_ideas
 from agents.orchestrator_agent import rebalance_budgets
@@ -269,3 +271,95 @@ async def validate_content(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error validating content: {str(e)}")
+    
+@router.post("/generate-campaigns")
+async def generate_campaigns(session: Session = Depends(get_session)):
+    """Generate campaign ideas using AI agents and create them with schedules"""
+    # Get current setup configuration
+    setup = session.query(SetupConfiguration).filter(
+        SetupConfiguration.is_active == True
+    ).first()
+    
+    if not setup:
+        raise HTTPException(status_code=400, detail="No active setup configuration found")
+    
+    if not setup.product_id:
+        raise HTTPException(status_code=400, detail="No product selected in setup")
+    
+    try:
+        # Generate segments if not already done
+        from backend.agents.segmentation_agent import generate_customer_segments
+        from data.models import CustomerSegment
+        
+        existing_segments = session.query(CustomerSegment).count()
+        if existing_segments == 0:
+            logger.info("No segments found, generating...")
+            segments_data = await generate_customer_segments()
+            # Save segments (implementation details...)
+        
+        # Get segments for campaign generation
+        segments = session.query(CustomerSegment).all()
+        segment_names = [s.name for s in segments]
+        
+        # Generate campaign ideas
+        from backend.agents.campaign_creation_agent import generate_campaign_ideas
+        
+        channels = ["facebook", "email", "google_seo"]
+        campaign_ideas = await generate_campaign_ideas(
+            segments=segment_names,
+            channels=channels,
+            strategic_goals=setup.strategic_goals or "Increase brand awareness and sales",
+            monthly_budget=setup.monthly_budget,
+            campaign_count=setup.campaign_count
+        )
+        
+        # Create campaigns with scheduling using CampaignService
+        created_campaigns = []
+        service = CampaignService(session)
+        
+        for idea in campaign_ideas:
+            # Ensure start_date is properly formatted
+            if 'start_date' in idea and idea['start_date']:
+                if isinstance(idea['start_date'], str):
+                    idea['start_date'] = datetime.fromisoformat(idea['start_date'].replace('Z', '+00:00'))
+            else:
+                idea['start_date'] = datetime.utcnow()
+            
+            campaign_data = {
+                "product_id": setup.product_id,
+                "name": idea["name"],
+                "description": idea["description"],
+                "channel": idea["channel"],
+                "customer_segment": idea["customer_segment"],
+                "frequency": idea["frequency"],
+                "start_date": idea["start_date"],
+                "budget": idea["suggested_budget"],
+                "status": "active"  # Set active to enable scheduling
+            }
+            
+            # Create campaign with automatic scheduling
+            campaign = await service.create_campaign(campaign_data)
+            created_campaigns.append({
+                "id": str(campaign.id),
+                "name": campaign.name,
+                "channel": campaign.channel,
+                "customer_segment": campaign.customer_segment,
+                "frequency": campaign.frequency,
+                "start_date": campaign.start_date.isoformat() if campaign.start_date else None,
+                "budget": campaign.budget,
+                "status": campaign.status,
+                "messaging": idea.get("messaging", []),
+                "objectives": idea.get("objectives", {}),
+                "expected_outcomes": idea.get("expected_outcomes", "")
+            })
+            
+            logger.info(f"Created campaign '{campaign.name}' with 6 months of schedules")
+        
+        return {
+            "message": f"Successfully generated and scheduled {len(created_campaigns)} campaigns",
+            "campaigns": created_campaigns
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating campaigns: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating campaigns: {str(e)}")

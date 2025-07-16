@@ -1,7 +1,7 @@
 // frontend/components/GameController.tsx
 import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
-import { gameStateApi } from '@/lib/api';
+import { gameStateApi, scheduleApi, agentApi } from '@/lib/api';
 
 
 interface Props {
@@ -13,6 +13,7 @@ export default function GameController({ onDateChange }: Props) {
   const [isRunning, setIsRunning] = useState(false);
   const [speed, setSpeed] = useState<'slow' | 'medium' | 'fast'>('medium');
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCheckedDate = useRef<string>('');
 
   const speedValues = {
     slow: 30000,    // 30 seconds per day
@@ -44,7 +45,40 @@ export default function GameController({ onDateChange }: Props) {
 
   useEffect(() => {
     onDateChange(gameDate);
-  }, [gameDate, onDateChange]);
+    
+    // Check for scheduled campaigns to execute
+    const currentDateStr = format(gameDate, 'yyyy-MM-dd');
+    if (currentDateStr !== lastCheckedDate.current && isRunning) {
+      lastCheckedDate.current = currentDateStr;
+      checkAndExecuteScheduledCampaigns(gameDate);
+    }
+  }, [gameDate, onDateChange, isRunning]);
+
+  const checkAndExecuteScheduledCampaigns = async (date: Date) => {
+    try {
+      // Get schedules for the current game date
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const schedules = await scheduleApi.getCalendar(year, month);
+      
+      const todayStr = format(date, 'yyyy-MM-dd');
+      const todaySchedules = schedules.filter((s: any) => 
+        s.date === todayStr && s.status === 'pending'
+      );
+      
+      // Execute each scheduled campaign
+      for (const schedule of todaySchedules) {
+        console.log(`Executing scheduled campaign: ${schedule.campaign_name}`);
+        try {
+          await agentApi.executeCampaign(schedule.campaign_id);
+        } catch (error) {
+          console.error(`Failed to execute campaign ${schedule.campaign_id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking scheduled campaigns:', error);
+    }
+  };
 
   // In handlePlayPause function:
   const handlePlayPause = async () => {
@@ -53,6 +87,7 @@ export default function GameController({ onDateChange }: Props) {
     
     // Persist to backend
     await gameStateApi.update({
+      current_date: gameDate.toISOString(),
       is_running: newIsRunning,
       game_speed: speed
     });
@@ -123,6 +158,12 @@ export default function GameController({ onDateChange }: Props) {
           </div>
         </div>
       </div>
+      
+      {isRunning && (
+        <div className="mt-2 text-xs text-gray-500">
+          Game is running - campaigns will execute automatically on their scheduled dates
+        </div>
+      )}
     </div>
   );
 }

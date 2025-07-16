@@ -1,224 +1,166 @@
 # backend/services/campaign_service.py
-from sqlmodel import Session, select
+from sqlmodel import Session
+from typing import Dict, Any
 from uuid import UUID
-from datetime import datetime
-from typing import List, Dict, Any, Union
+from datetime import datetime, timedelta
 import logging
 
-from data.database import engine
-from data.models import Campaign, Schedule, SetupConfiguration
-from agents.crew_factory import create_campaign_crew
-from agents.orchestrator_agent import rebalance_budgets
-from core.scheduler import schedule_recurring_campaign
-from backend.services.crew_service import CrewService
-from backend.services.metrics_generator_service import MetricsGeneratorService
+from data.models import Campaign, Schedule
+from backend.core.scheduler import schedule_campaign_execution, schedule_recurring_campaign, cancel_job
+from backend.agents.orchestrator_agent import rebalance_budgets
 
 logger = logging.getLogger(__name__)
-
-# def ensure_uuid(value: Union[str, UUID]) -> UUID:
-#     """Convert string to UUID if needed"""
-#     if isinstance(value, str):
-#         return UUID(value)
-#     return value
-
-# def ensure_str(value: Union[str, UUID]) -> str:
-#     """Convert UUID to string if needed"""
-#     if isinstance(value, UUID):
-#         return str(value)
-#     return value
 
 class CampaignService:
     def __init__(self, session: Session):
         self.session = session
-        self.crew_service = CrewService()
-        self.metrics_service = MetricsGeneratorService()
     
     async def create_campaign(self, campaign_data: Dict[str, Any]) -> Campaign:
-        """Create a new campaign and trigger budget rebalancing"""
-        # Create campaign with initial budget of 0 or minimal amount
-        campaign = Campaign(
-            product_id=campaign_data.get('product_id'),
-            name=campaign_data['name'],
-            description=campaign_data.get('description'),
-            channel=campaign_data['channel'],
-            customer_segment=campaign_data.get('customer_segment'),
-            frequency=campaign_data.get('frequency', 'weekly'),
-            budget=0.0,  # Start with 0 budget
-            status="draft"
-        )
-        
+        """Create a new campaign and schedule it"""
+        campaign = Campaign(**campaign_data)
         self.session.add(campaign)
         self.session.commit()
         self.session.refresh(campaign)
         
-        logger.info(f"Created campaign {campaign.name} with initial budget of 0")
+        # Automatically create schedules based on frequency and start_date
+        if campaign.frequency and campaign.start_date:
+            await self._create_campaign_schedules(campaign, months=6)
+            logger.info(f"Created campaign {campaign.name} with 6 months of schedules")
         
-        # Trigger budget rebalancing after adding new campaign
-        try:
-            await self._trigger_budget_rebalance()
-        except Exception as e:
-            logger.error(f"Error triggering budget rebalance: {str(e)}")
-            # Don't fail campaign creation if rebalancing fails
+        # Trigger budget rebalancing for all active campaigns
+        await rebalance_budgets()
         
         return campaign
     
-    async def _trigger_budget_rebalance(self):
-        """Trigger budget rebalancing across all campaigns"""
-        logger.info("Triggering automatic budget rebalancing after campaign creation")
-        
-        try:
-            rebalance_results = await rebalance_budgets()
-            
-            if rebalance_results:
-                logger.info(f"Budget rebalancing completed. Updated {len(rebalance_results)} campaigns")
-                for result in rebalance_results:
-                    logger.debug(f"Campaign {result['campaign_name']}: "
-                               f"${result['old_budget']:.0f} -> ${result['new_budget']:.0f}")
-            else:
-                logger.info("No budget changes made during rebalancing")
-                
-        except Exception as e:
-            logger.error(f"Error during budget rebalancing: {str(e)}")
-            raise
-    
-    async def activate_campaign(self, campaign_id: Union[str, UUID]) -> Campaign:
-        """Activate a campaign and schedule it"""
-        campaign_uuid = campaign_id
-        
-        campaign = self.session.get(Campaign, campaign_uuid)
+    async def activate_campaign(self, campaign_id: UUID) -> Campaign:
+        """Activate a campaign and create schedules if not already created"""
+        campaign = self.session.get(Campaign, campaign_id)
         if not campaign:
-            raise ValueError("Campaign not found")
-        
-        if campaign.status == "active":
-            return campaign
-        
-        # Ensure campaign has budget before activation
-        if campaign.budget <= 0:
-            # Trigger rebalancing if no budget
-            await self._trigger_budget_rebalance()
-            self.session.refresh(campaign)
-            
-            if campaign.budget <= 0:
-                raise ValueError("Campaign cannot be activated without budget allocation")
+            raise ValueError(f"Campaign {campaign_id} not found")
         
         # Update status
         campaign.status = "active"
         campaign.updated_at = datetime.utcnow()
         
-        # Schedule recurring execution based on frequency
-        if campaign.frequency:
-            job_id = f"campaign_{str(campaign_uuid)}_recurring"
-            schedule_recurring_campaign(
-                campaign_uuid,  # Scheduler needs string
-                campaign.frequency,
-                job_id
-            )
-            
-            # Create schedule record
-            schedule = Schedule(
-                campaign_id=campaign_uuid,  # Database needs UUID
-                scheduled_time=datetime.utcnow(),
-                status="pending",
-                job_id=job_id
-            )
-            self.session.add(schedule)
+        # Check if schedules already exist
+        existing_schedules = self.session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id
+        ).count()
+        
+        # Create schedules if none exist
+        if existing_schedules == 0 and campaign.frequency and campaign.start_date:
+            await self._create_campaign_schedules(campaign, months=6)
         
         self.session.add(campaign)
         self.session.commit()
         self.session.refresh(campaign)
         
-        logger.info(f"Activated campaign {campaign.name} (ID: {campaign_uuid})")
+        logger.info(f"Activated campaign {campaign.name} with frequency {campaign.frequency}")
+        
         return campaign
     
-    async def execute_campaign(self, campaign_id: Union[str, UUID]) -> Dict[str, Any]:
-        """Execute a campaign using CrewAI agents"""
-        campaign_uuid = campaign_id
+    async def _create_campaign_schedules(self, campaign: Campaign, months: int = 6):
+        """Create schedule entries based on campaign frequency for specified months"""
+        if not campaign.frequency or not campaign.start_date:
+            return
         
-        with Session(engine) as session:
-            campaign = session.get(Campaign, campaign_uuid)
-            if not campaign:
-                raise ValueError(f"Campaign not found: {campaign_uuid}")
+        # Clear existing pending schedules
+        existing_schedules = self.session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id,
+            Schedule.status == "pending"
+        ).all()
+        
+        for schedule in existing_schedules:
+            if schedule.job_id:
+                cancel_job(schedule.job_id)
+            self.session.delete(schedule)
+        
+        # Create new schedules for the specified period (default 6 months)
+        current_date = campaign.start_date
+        end_date = current_date + timedelta(days=30 * months)  # Approximate months
+        
+        schedule_count = 0
+        while current_date <= end_date:
+            # Create schedule entry
+            job_id = f"{campaign.id}_{current_date.isoformat()}"
+            schedule = Schedule(
+                campaign_id=campaign.id,
+                scheduled_time=current_date,
+                status="pending",
+                job_id=job_id
+            )
+            self.session.add(schedule)
             
-            if campaign.status != "active":
-                logger.warning(f"Campaign {campaign_uuid} is not active, skipping execution")
-                return {"status": "skipped", "reason": "Campaign not active"}
+            # Schedule with APScheduler
+            schedule_campaign_execution(str(campaign.id), current_date, job_id)
+            schedule_count += 1
             
-            # Get setup configuration for context
-            setup = session.exec(
-                select(SetupConfiguration).where(SetupConfiguration.is_active == True)
-            ).first()
-            
-            if not setup:
-                raise ValueError("No active setup configuration found")
-            
-            logger.info(f"Executing campaign {campaign.name} on channel {campaign.channel}")
-            
-            try:
-                # Create campaign crew
-                crew = create_campaign_crew(
-                    campaign_id=campaign_uuid,  # Pass UUID object
-                    channel=campaign.channel,
-                    product_info={
-                        "id": campaign.product_id,
-                        "name": campaign.product.product_name if campaign.product else "",
-                        "description": campaign.product.description if campaign.product else ""
-                    },
-                    market_details=setup.market_details,
-                    strategic_goals=setup.strategic_goals,
-                    guardrails=setup.guardrails
-                )
+            # Calculate next date based on frequency
+            if campaign.frequency == "daily":
+                current_date += timedelta(days=1)
+            elif campaign.frequency == "weekly":
+                current_date += timedelta(weeks=1)
+            elif campaign.frequency == "monthly":
+                # More accurate monthly calculation
+                # Add one month properly (handle month boundaries)
+                if current_date.month == 12:
+                    next_month = 1
+                    next_year = current_date.year + 1
+                else:
+                    next_month = current_date.month + 1
+                    next_year = current_date.year
                 
-                # Execute crew
-                result = await self.crew_service.execute_crew(crew, {
-                    "campaign_name": campaign.name,
-                    "campaign_description": campaign.description,
-                    "customer_segment": campaign.customer_segment,
-                    "budget": campaign.budget
-                })
-                
-                # Generate metrics for this execution
-                metric = await self.metrics_service.generate_and_store_metrics(campaign_uuid)
-                
-                # Update execution record
-                schedules = session.exec(
-                    select(Schedule)
-                    .where(Schedule.campaign_id == campaign_uuid)
-                    .where(Schedule.status == "pending")
-                ).all()
-                
-                for schedule in schedules:
-                    schedule.status = "completed"
-                    schedule.executed_at = datetime.utcnow()
-                    session.add(schedule)
-                
-                session.commit()
-                
-                logger.info(f"Campaign {campaign.name} executed successfully with reach impact")
-                return {
-                    **result,
-                    "metrics_generated": True,
-                    "metric_id": metric.id
-                }
-                
-            except Exception as e:
-                logger.error(f"Error executing campaign {campaign_uuid}: {str(e)}")
-                
-                # Update schedule status to failed
-                schedules = session.exec(
-                    select(Schedule)
-                    .where(Schedule.campaign_id == campaign_uuid)
-                    .where(Schedule.status == "pending")
-                ).all()
-                
-                for schedule in schedules:
-                    schedule.status = "failed"
-                    session.add(schedule)
-                
-                session.commit()
-                raise
+                try:
+                    current_date = current_date.replace(month=next_month, year=next_year)
+                except ValueError:
+                    # Handle cases like Jan 31 -> Feb 31 (doesn't exist)
+                    # Move to last day of next month
+                    import calendar
+                    last_day = calendar.monthrange(next_year, next_month)[1]
+                    current_date = current_date.replace(month=next_month, year=next_year, day=last_day)
+            else:
+                break
+        
+        self.session.commit()
+        logger.info(f"Created {schedule_count} schedules for campaign {campaign.name} over {months} months")
 
-# Global function for scheduler
 async def execute_campaign(campaign_id: str):
-    """Global function to execute a campaign (called by scheduler)"""
-    service = CampaignService(Session(engine))
-    return await service.execute_campaign(campaign_id)
+    """Execute a campaign (called by scheduler)"""
+    from sqlmodel import Session
+    from data.database import engine
+    from backend.agents.campaign_execution_agent import execute_campaign_content
+    
+    with Session(engine) as session:
+        campaign = session.get(Campaign, UUID(campaign_id))
+        if not campaign:
+            logger.error(f"Campaign {campaign_id} not found")
+            return
+        
+        # Find the schedule being executed
+        schedule = session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id,
+            Schedule.status == "pending"
+        ).order_by(Schedule.scheduled_time).first()
+        
+        if schedule:
+            schedule.status = "executing"
+            session.add(schedule)
+            session.commit()
+        
+        try:
+            # Execute the campaign
+            logger.info(f"Executing campaign {campaign.name}")
+            await execute_campaign_content(campaign_id)
+            
+            if schedule:
+                schedule.status = "completed"
+                schedule.executed_at = datetime.utcnow()
+                session.add(schedule)
+                session.commit()
+                
+        except Exception as e:
+            logger.error(f"Error executing campaign {campaign_id}: {str(e)}")
+            if schedule:
+                schedule.status = "failed"
+                session.add(schedule)
+                session.commit()

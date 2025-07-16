@@ -34,6 +34,7 @@ export interface Campaign {
   channel: 'facebook' | 'email' | 'google_seo';
   customer_segment?: string;
   frequency?: 'daily' | 'weekly' | 'monthly';
+  start_date?: string;  // NEW FIELD
   budget: number;
   status: 'draft' | 'active' | 'paused' | 'completed';
   created_at: string;

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, validator, ValidationError
 import json
 import logging
 import traceback
+from datetime import datetime, timedelta
 
 from backend.core.config import settings
 
@@ -62,6 +63,10 @@ class CampaignIdea(BaseModel):
     frequency: str = Field(
         description="Publishing frequency",
         pattern="^(daily|weekly|monthly)$"
+    )
+    start_date: str = Field(
+        description="Campaign start date in ISO format",
+        default_factory=lambda: datetime.utcnow().isoformat()
     )
     budget_percentage: float = Field(
         description="Percentage of total budget (0-100)",
@@ -194,6 +199,7 @@ async def generate_campaign_ideas(
             Available Channels: {', '.join(channels)}
             Strategic Goals: {strategic_goals}
             Total Monthly Budget: ${monthly_budget}
+            Current Date: {datetime.utcnow().isoformat()}
             
             Requirements for each campaign:
             1. UNIQUE campaign name (2-5 words, catchy and memorable) - NO DUPLICATES
@@ -201,16 +207,17 @@ async def generate_campaign_ideas(
             3. Target channel (must be one of: facebook, email, or google_seo)
             4. Target customer segment (must be from provided segments)
             5. Publishing frequency (daily, weekly, or monthly)
-            6. Budget percentage (as percentage of total budget)
-            7. Detailed messaging including:
+            6. Start date (ISO format, should be within the next 7 days from current date)
+            7. Budget percentage (as percentage of total budget)
+            8. Detailed messaging including:
                - 3-5 key messaging points
                - Value proposition
                - Call to action
-            8. Specific objectives including:
+            9. Specific objectives including:
                - Primary goal (e.g., increase brand awareness, drive sales, generate leads)
                - Target metrics with specific numbers
                - 2-4 success criteria
-            9. Expected outcomes (specific and measurable)
+            10. Expected outcomes (specific and measurable)
             
             IMPORTANT:
             - Campaigns must be diverse and target different segments/channels
@@ -218,6 +225,7 @@ async def generate_campaign_ideas(
             - Each campaign must have a UNIQUE name
             - Be specific about objectives and expected outcomes
             - Align all campaigns with the strategic goals: {strategic_goals}
+            - Stagger start dates across the next 7 days for a phased rollout
             
             Return the campaigns following the exact structure required by the CampaignIdeaList model.
             """,
@@ -258,6 +266,7 @@ async def generate_campaign_ideas(
                 "customer_segment": campaign.customer_segment,
                 "suggested_budget": (campaign.budget_percentage / 100) * monthly_budget,
                 "frequency": campaign.frequency,
+                "start_date": campaign.start_date,  # Include start_date
                 "messaging": [
                     campaign.messaging.value_proposition,
                     *campaign.messaging.key_points
@@ -306,8 +315,13 @@ def get_default_campaigns(
         "Beauty Boost Initiative"
     ]
     
+    # Start dates staggered over the next 7 days
+    base_date = datetime.utcnow()
+    
     for i, channel in enumerate(channels[:campaign_count]):
         segment = segments[i % len(segments)] if segments else "General Audience"
+        start_date = base_date + timedelta(days=i % 7)
+        
         default_campaigns.append({
             "name": campaign_names[i % len(campaign_names)],
             "description": f"Targeted {channel} campaign designed to engage {segment} with personalized beauty content and exclusive offers.",
@@ -315,6 +329,7 @@ def get_default_campaigns(
             "customer_segment": segment,
             "suggested_budget": budget_per_campaign,
             "frequency": "weekly",
+            "start_date": start_date.isoformat(),  # Include start_date
             "messaging": [
                 "Discover your perfect skincare routine",
                 "Natural ingredients for radiant skin", 

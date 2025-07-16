@@ -5,11 +5,11 @@ from uuid import UUID
 import logging
 import json
 
-from agents.content_agents.email_agent import create_email_content_agent, create_email_content_task
-from agents.content_agents.facebook_agent import create_facebook_content_agent, create_facebook_content_task  
-from agents.content_agents.google_seo_agent import create_google_seo_content_agent, create_google_seo_content_task
-from agents.compliance_agent import create_compliance_agent, create_compliance_task
-from agents.campaign_execution_agent import create_execution_agent, create_execution_task
+from backend.agents.content_agents.email_agent import create_email_content_agent, create_email_content_task
+from backend.agents.content_agents.facebook_agent import create_facebook_content_agent, create_facebook_content_task  
+from backend.agents.content_agents.google_seo_agent import create_google_seo_content_agent, create_google_seo_content_task
+from backend.agents.compliance_agent import create_compliance_agent, create_compliance_task
+from backend.agents.campaign_execution_agent import create_execution_agent, create_execution_task
 
 logger = logging.getLogger(__name__)
 

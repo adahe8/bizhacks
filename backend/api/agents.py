@@ -11,9 +11,9 @@ import traceback
 from data.database import get_session
 from data.models import CustomerSegment, Campaign, SetupConfiguration
 from backend.services.campaign_service import CampaignService
-from agents.segmentation_agent import generate_customer_segments
-from agents.campaign_creation_agent import generate_campaign_ideas
-from agents.orchestrator_agent import rebalance_budgets
+from backend.agents.segmentation_agent import generate_customer_segments
+from backend.agents.campaign_creation_agent import generate_campaign_ideas
+from backend.agents.orchestrator_agent import rebalance_budgets
 import json
 
 router = APIRouter()

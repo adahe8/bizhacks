@@ -9,7 +9,7 @@ import json
 from data.database import get_session
 from data.models import SetupConfiguration, Company, Product
 from backend.core.scheduler import schedule_budget_rebalancing
-from agents.segmentation_agent import generate_customer_segments
+from backend.agents.segmentation_agent import generate_customer_segments
 
 router = APIRouter()
 

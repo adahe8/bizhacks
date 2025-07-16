@@ -10,6 +10,9 @@ from data.models import Campaign, Product, ContentAsset
 from backend.services.campaign_service import CampaignService
 from pydantic import BaseModel
 
+import logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 class CampaignCreate(BaseModel):
@@ -84,23 +87,25 @@ async def create_campaign(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Create campaign
-    campaign = Campaign(
-        product_id=campaign_data.product_id,
-        name=campaign_data.name,
-        description=campaign_data.description,
-        channel=campaign_data.channel,
-        customer_segment=campaign_data.customer_segment,
-        frequency=campaign_data.frequency,
-        budget=campaign_data.budget,
-        status="draft"
-    )
+    # Use CampaignService to create campaign with auto-rebalancing
+    service = CampaignService(session)
     
-    session.add(campaign)
-    session.commit()
-    session.refresh(campaign)
-    
-    return campaign
+    try:
+        campaign = await service.create_campaign({
+            "product_id": campaign_data.product_id,
+            "name": campaign_data.name,
+            "description": campaign_data.description,
+            "channel": campaign_data.channel,
+            "customer_segment": campaign_data.customer_segment,
+            "frequency": campaign_data.frequency,
+            "budget": 0  # Start with 0, will be allocated by rebalancing
+        })
+        
+        return campaign
+        
+    except Exception as e:
+        logger.error(f"Error creating campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating campaign: {str(e)}")
 
 @router.put("/{campaign_id}", response_model=CampaignResponse)
 async def update_campaign(

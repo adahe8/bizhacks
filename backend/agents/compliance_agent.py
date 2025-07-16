@@ -1,7 +1,8 @@
-#  backend/agents/compliance_agent.py
+# backend/agents/compliance_agent.py
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field, validator
 import json
 import logging
 
@@ -9,97 +10,142 @@ from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+class ComplianceDecision(BaseModel):
+    """Pydantic model for binary compliance decision"""
+    approved: bool = Field(
+        description="Whether the content is approved (True) or rejected (False)"
+    )
+    reason: str = Field(
+        description="Brief reason for the decision",
+        min_length=10,
+        max_length=200
+    )
+    violations: List[str] = Field(
+        description="List of specific guardrail violations if rejected",
+        default=[]
+    )
+    
+    @validator('violations')
+    def validate_violations(cls, v, values):
+        # If not approved, must have at least one violation
+        if 'approved' in values and not values['approved'] and len(v) == 0:
+            raise ValueError("Rejected content must specify at least one violation")
+        # If approved, should not have violations
+        if 'approved' in values and values['approved'] and len(v) > 0:
+            raise ValueError("Approved content should not have violations")
+        return v
+
 def create_compliance_agent(guardrails: str) -> Agent:
     """Create an agent for content compliance checking"""
     
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
         google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.3  # Lower temperature for more consistent compliance checking
+        temperature=0.2  # Very low temperature for consistent binary decisions
     )
     
     agent = Agent(
         role="Brand Compliance Officer",
-        goal="Ensure all content adheres to brand guidelines and regulatory requirements",
-        backstory=f"""You are a meticulous compliance specialist who ensures all marketing content
-        meets brand standards and regulatory requirements. You review content against these guardrails:
-        {guardrails}""",
+        goal="Make binary approval decisions on marketing content based on brand guidelines",
+        backstory=f"""You are a strict compliance officer who reviews marketing content.
+        You must make a clear YES/NO decision based on these guardrails:
+        {guardrails}
+        
+        You APPROVE content only if it fully complies with ALL guardrails.
+        You REJECT content if it violates ANY guardrail.
+        Be decisive and provide clear reasoning.""",
         llm=llm,
         verbose=True,
         allow_delegation=False,
-        tools=[]
+        tools=[],
+        output_pydantic=ComplianceDecision
     )
     
     return agent
 
-def create_compliance_task(agent: Agent, guardrails: str) -> Task:
+def create_compliance_task(agent: Agent, guardrails: str, content: Dict[str, Any]) -> Task:
     """Create task for compliance checking"""
     task = Task(
         description=f"""
-        Review the generated marketing content for compliance with brand guidelines and regulations.
+        Review the marketing content and make a BINARY decision: APPROVE or REJECT.
         
-        Guardrails to enforce:
+        Content to Review:
+        {json.dumps(content, indent=2)}
+        
+        Guardrails (ALL must be satisfied for approval):
         {guardrails}
         
-        Check for:
-        1. Brand voice consistency
-        2. Factual accuracy
-        3. Legal compliance (claims, disclaimers)
-        4. Prohibited content or language
-        5. Tone and messaging alignment
+        Make your decision based on:
+        1. Does the content violate ANY of the guardrails? If yes, REJECT.
+        2. Does the content fully comply with ALL guardrails? If yes, APPROVE.
         
-        If the content violates any guidelines, provide specific feedback on what needs to be changed.
+        Check for:
+        - Brand voice violations
+        - Prohibited language or claims
+        - Legal compliance issues
+        - Tone inappropriateness
+        - Factual inaccuracies
+        - Any other guardrail violations
         
         Provide:
-        1. Compliance status (approved/rejected)
-        2. Issues found (if any)
-        3. Required changes (if rejected)
-        4. Suggestions for improvement
+        - approved: true/false (binary decision)
+        - reason: Brief explanation of your decision (10-200 characters)
+        - violations: List of specific violations if rejected (empty list if approved)
         
-        Output as JSON with keys: status, issues, required_changes, suggestions
+        BE DECISIVE. No "maybe" or "needs revision" - only YES or NO.
+        
+        Return your decision following the ComplianceDecision model structure.
         """,
         agent=agent,
-        expected_output="JSON formatted compliance review"
+        expected_output="Binary compliance decision following ComplianceDecision model",
+        output_pydantic=ComplianceDecision
     )
     
     return task
 
 async def validate_content(content: Dict[str, Any], guardrails: str) -> Dict[str, Any]:
-    """Validate content against brand guardrails"""
+    """Validate content against brand guardrails with binary decision"""
     
     agent = create_compliance_agent(guardrails)
-    
-    # Create validation task
-    task = Task(
-        description=f"""
-        Review the following marketing content for compliance:
-        
-        Content: {json.dumps(content, indent=2)}
-        
-        Guardrails: {guardrails}
-        
-        Ensure the content meets all brand guidelines and regulatory requirements.
-        Be thorough but fair in your assessment.
-        """,
-        agent=agent,
-        expected_output="JSON formatted compliance review"
-    )
-    
-    # Execute task
-    result = task.execute()
+    task = create_compliance_task(agent, guardrails, content)
     
     try:
-        # Parse the result
-        validation_result = json.loads(result)
+        # Execute task
+        result = task.execute()
         
-        logger.info(f"Content validation result: {validation_result.get('status', 'unknown')}")
-        return validation_result
-        
+        # If result is a ComplianceDecision object, convert to dict
+        if isinstance(result, ComplianceDecision):
+            logger.info(f"Content validation decision: {'APPROVED' if result.approved else 'REJECTED'}")
+            return {
+                "status": "approved" if result.approved else "rejected",
+                "approved": result.approved,
+                "reason": result.reason,
+                "violations": result.violations
+            }
+        else:
+            # Try to parse as JSON if string
+            decision = json.loads(result) if isinstance(result, str) else result
+            logger.info(f"Content validation decision: {decision.get('approved', 'unknown')}")
+            return {
+                "status": "approved" if decision.get('approved', False) else "rejected",
+                "approved": decision.get('approved', False),
+                "reason": decision.get('reason', 'No reason provided'),
+                "violations": decision.get('violations', [])
+            }
+            
     except json.JSONDecodeError:
         logger.error("Failed to parse validation result")
         return {
             "status": "error",
-            "issues": ["Failed to parse compliance check result"],
-            "required_changes": [],
-            "suggestions": []
+            "approved": False,
+            "reason": "Failed to parse compliance check result",
+            "violations": ["System error during validation"]
+        }
+    except Exception as e:
+        logger.error(f"Error during content validation: {str(e)}")
+        return {
+            "status": "error", 
+            "approved": False,
+            "reason": f"Validation error: {str(e)}",
+            "violations": ["System error during validation"]
         }

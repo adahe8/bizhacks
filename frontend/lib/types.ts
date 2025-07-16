@@ -153,6 +153,11 @@ export interface CampaignIdea {
   suggested_budget: number;
   frequency: string;
   messaging?: string[];
+  objectives?: {
+    primary_goal: string;
+    target_metrics: Record<string, number>;
+    success_criteria: string[];
+  };
   expected_outcomes?: string;
 }
 

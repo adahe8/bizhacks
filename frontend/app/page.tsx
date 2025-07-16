@@ -11,6 +11,7 @@ import MarketDetailsModal from '@/components/modals/MarketDetailsModal';
 import StrategicGoalsModal from '@/components/modals/StrategicGoalsModal';
 import BudgetModal from '@/components/modals/BudgetModal';
 import GuardrailsModal from '@/components/modals/GuardrailsModal';
+import AICampaignGenerationModal from '../components/modals/AICampaignGenerationModal';
 
 type SetupStep = 
   | 'firm'
@@ -19,6 +20,8 @@ type SetupStep =
   | 'strategic'
   | 'budget'
   | 'guardrails'
+  | 'generating-segments'
+  | 'ai-campaigns'
   | 'complete';
 
 export default function Home() {
@@ -26,6 +29,7 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState<SetupStep | null>(null);
   const [isExistingSetup, setIsExistingSetup] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [generatedSegments, setGeneratedSegments] = useState<any[]>([]);
   const [setupData, setSetupData] = useState({
     company_id: '',
     product_id: '',
@@ -72,7 +76,7 @@ export default function Home() {
     }
   };
 
-  const handleStepComplete = (stepData: any) => {
+  const handleStepComplete = async (stepData: any) => {
     setSetupData(prev => ({ ...prev, ...stepData }));
     
     // Move to next step
@@ -82,37 +86,55 @@ export default function Home() {
     if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1]);
     } else {
-      completeSetup();
+      // After guardrails, complete setup and generate segments
+      await completeSetup();
     }
   };
 
   const completeSetup = async () => {
     try {
+      // Initialize setup
       await setupApi.initialize(setupData);
-      setCurrentStep('complete');
       
-      // Generate customer segments after setup
-      setTimeout(async () => {
-        try {
-          await agentApi.generateSegments();
-        } catch (error) {
-          console.error('Error generating segments:', error);
-        }
-      }, 1000);
+      // Show segment generation loading
+      setCurrentStep('generating-segments');
       
-      // Redirect to dashboard after a brief delay
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 3000);
+      // Generate customer segments
+      try {
+        const segmentResponse = await agentApi.generateSegments();
+        const segments = segmentResponse.segments || [];
+        setGeneratedSegments(segments);
+        
+        // After segments are generated, automatically go to AI campaign generation
+        setTimeout(() => {
+          setCurrentStep('ai-campaigns');
+        }, 1500);
+        
+      } catch (error) {
+        console.error('Error generating segments:', error);
+        // Continue to campaign generation even if segments fail
+        setCurrentStep('ai-campaigns');
+      }
+      
     } catch (error) {
       console.error('Error completing setup:', error);
       alert('Error completing setup. Please try again.');
     }
   };
 
+  const handleCampaignsGenerated = () => {
+    setCurrentStep('complete');
+    
+    // Redirect to dashboard after a brief delay
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 2000);
+  };
+
   const startNewSetup = () => {
     setShowWelcome(false);
     setCurrentStep('firm');
+    setGeneratedSegments([]);
     setSetupData({
       company_id: '',
       product_id: '',
@@ -165,13 +187,25 @@ export default function Home() {
     );
   }
 
+  if (currentStep === 'generating-segments') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-lg p-8 shadow-lg">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Analyzing Customer Data...</h2>
+          <p className="text-gray-600">Creating customer segments using AI</p>
+        </div>
+      </div>
+    );
+  }
+
   if (currentStep === 'complete') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
         <div className="text-center bg-white rounded-lg p-8 shadow-lg">
           <div className="text-6xl mb-4">✨</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Complete!</h2>
-          <p className="text-gray-600 mb-4">Generating customer segments...</p>
+          <p className="text-gray-600 mb-4">Your campaigns are ready!</p>
           <div className="animate-pulse text-sm text-gray-500">
             Redirecting to dashboard...
           </div>
@@ -183,7 +217,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       {/* Progress Indicator */}
-      {currentStep && (
+      {currentStep && currentStep !== 'ai-campaigns' && (
         <div className="fixed top-0 left-0 right-0 bg-white shadow-sm z-50">
           <div className="max-w-4xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
@@ -207,7 +241,7 @@ export default function Home() {
         </div>
       )}
       
-      <div className={currentStep ? "pt-16" : ""}>
+      <div className={currentStep && currentStep !== 'ai-campaigns' ? "pt-16" : ""}>
         {currentStep === 'firm' && (
           <FirmDetailsModal
             onComplete={(data) => handleStepComplete({ company_id: data.company_id })}
@@ -246,6 +280,14 @@ export default function Home() {
         {currentStep === 'guardrails' && (
           <GuardrailsModal
             onComplete={(data) => handleStepComplete({ guardrails: data })}
+          />
+        )}
+        
+        {currentStep === 'ai-campaigns' && (
+          <AICampaignGenerationModal
+            segments={generatedSegments}
+            channels={['facebook', 'email', 'google_seo']}
+            onComplete={handleCampaignsGenerated}
           />
         )}
       </div>

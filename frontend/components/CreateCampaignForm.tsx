@@ -67,11 +67,16 @@ export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: 
     }
   };
 
-  const handleFormSubmit = (data: CampaignFormData) => {
+  const handleFormSubmit = async (data: CampaignFormData) => {
+    if (!currentSetup || !currentSetup.product_id) {
+      alert('No product selected. Please complete the setup wizard.');
+      return;
+    }
+    
     // Add product_id from setup
     const submitData = {
       ...data,
-      product_id: currentSetup?.product_id
+      product_id: currentSetup.product_id
     };
     onSubmit(submitData);
   };

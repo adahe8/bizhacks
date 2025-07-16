@@ -69,7 +69,7 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
                     session.add(metric)
                 
                 results.append({
-                    "campaign_id": ensure_str(campaign.id),
+                    "campaign_id": campaign.id,
                     "campaign_name": campaign.name,
                     "metrics_collected": len(metrics)
                 })
@@ -77,7 +77,7 @@ async def collect_all_metrics() -> List[Dict[str, Any]]:
             except Exception as e:
                 logger.error(f"Error collecting metrics for campaign {campaign.id}: {str(e)}")
                 results.append({
-                    "campaign_id": ensure_str(campaign.id),
+                    "campaign_id": campaign.id,
                     "campaign_name": campaign.name,
                     "error": str(e)
                 })
@@ -91,7 +91,7 @@ async def collect_campaign_metrics(campaign_id: Union[str, UUID], channel: str) 
     """Collect metrics for a specific campaign"""
     
     # Ensure campaign_id is UUID for database queries
-    campaign_uuid = ensure_uuid(campaign_id)
+    campaign_uuid = campaign_id
     
     # Import the appropriate client based on channel
     if channel == "facebook":
@@ -124,7 +124,7 @@ async def collect_campaign_metrics(campaign_id: Union[str, UUID], channel: str) 
             try:
                 # Get metrics from the platform
                 asset_metrics = await client.get_metrics(
-                    asset_id=ensure_str(asset.id),
+                    asset_id=asset.id,
                     published_at=asset.published_at
                 )
                 all_metrics.append(asset_metrics)

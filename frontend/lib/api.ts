@@ -162,6 +162,13 @@ export const scheduleApi = {
     return response.data;
   },
   
+  getCalendar: async (year: number, month: number) => {
+    const response = await api.get('/api/schedules/calendar', {
+      params: { year, month },
+    });
+    return response.data;
+  },
+  
   update: async (id: string, updateData: any) => {
     const response = await api.put<Schedule>(`/api/schedules/${id}`, updateData);
     return response.data;
@@ -199,3 +206,4 @@ export const gameStateApi = {
 };
 
 export default api;
+

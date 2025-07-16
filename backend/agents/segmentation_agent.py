@@ -1,9 +1,9 @@
-
 # backend/agents/segmentation_agent.py
 
 from crewai import Agent, Task
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Dict, Any, Union
+from pydantic import BaseModel, Field, validator
 import json
 import logging
 import os
@@ -38,6 +38,90 @@ def ensure_str(value: Union[str, UUID]) -> str:
         return str(value)
     return value
 
+# Pydantic models for segmentation
+class SegmentCharacteristics(BaseModel):
+    """Characteristics of a customer segment"""
+    age_range: str = Field(
+        description="Age range of the segment (e.g., '25-34')"
+    )
+    primary_locations: List[str] = Field(
+        description="Top 2-3 locations",
+        min_items=1,
+        max_items=3
+    )
+    purchase_behavior: str = Field(
+        description="Purchase behavior pattern",
+        pattern="^(high_frequency|moderate|low_frequency|non_purchaser)$"
+    )
+    average_purchase_value: float = Field(
+        description="Average purchase value",
+        ge=0
+    )
+    channel_preference: str = Field(
+        description="Primary channel preference"
+    )
+    skin_type_distribution: Dict[str, float] = Field(
+        description="Distribution of skin types in percentage",
+        default={}
+    )
+
+class SegmentName(BaseModel):
+    """Model for a segment name and description"""
+    cluster_id: int = Field(
+        description="Cluster ID (0-based index)",
+        ge=0
+    )
+    name: str = Field(
+        description="Unique, catchy segment name (2-3 words)",
+        min_length=5,
+        max_length=30
+    )
+    description: str = Field(
+        description="Brief description of segment characteristics (1-2 sentences)",
+        min_length=20,
+        max_length=200
+    )
+    marketing_focus: str = Field(
+        description="Key marketing focus for this segment",
+        min_length=10,
+        max_length=100
+    )
+    
+    @validator('name')
+    def validate_name_format(cls, v):
+        words = v.split()
+        if len(words) < 2 or len(words) > 4:
+            raise ValueError("Segment name should be 2-4 words")
+        return v
+
+class SegmentNameList(BaseModel):
+    """List of segment names"""
+    segments: List[SegmentName] = Field(
+        description="List of segment names and descriptions"
+    )
+    
+    @validator('segments')
+    def validate_unique_names(cls, v):
+        names = [seg.name for seg in v]
+        if len(names) != len(set(names)):
+            # Find duplicates
+            seen = set()
+            duplicates = set()
+            for name in names:
+                if name in seen:
+                    duplicates.add(name)
+                seen.add(name)
+            raise ValueError(f"All segment names must be unique. Duplicates found: {duplicates}")
+        return v
+    
+    @validator('segments')
+    def validate_cluster_ids(cls, v):
+        cluster_ids = [seg.cluster_id for seg in v]
+        expected_ids = list(range(len(v)))
+        if sorted(cluster_ids) != expected_ids:
+            raise ValueError(f"Cluster IDs must be sequential starting from 0. Got: {cluster_ids}")
+        return v
+
 def create_naming_agent() -> Agent:
     """Create an agent for naming customer segments"""
     logger.debug("Creating naming agent...")
@@ -64,13 +148,15 @@ def create_naming_agent() -> Agent:
             goal="Create memorable and descriptive names for customer segments based on their characteristics",
             backstory="""You are an expert in marketing and customer analytics.
             You excel at creating catchy, descriptive names that capture the essence
-            of customer segments and make them easy to remember and discuss.""",
+            of customer segments and make them easy to remember and discuss.
+            You always provide structured output following the SegmentNameList model.""",
             llm=llm,
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            output_pydantic=SegmentNameList
         )
         
-        logger.info("Successfully created naming agent")
+        logger.info("Successfully created naming agent with pydantic validation")
         return agent
     except Exception as e:
         logger.error(f"Failed to create naming agent: {str(e)}")
@@ -157,8 +243,9 @@ async def generate_customer_segments(
             {json.dumps(clusters_data, indent=2)}
 
             For each cluster, provide:
-            1. A UNIQUE catchy, memorable name (2-3 words max) - Each name MUST be different
+            1. A UNIQUE catchy, memorable name (2-3 words) - Each name MUST be completely different
             2. A brief description (1-2 sentences) that captures their key characteristics
+            3. A marketing focus - what's the key approach for this segment
 
             Focus on:
             - Age demographics
@@ -167,34 +254,33 @@ async def generate_customer_segments(
             - Location patterns
             - Skin type (if relevant)
 
-            IMPORTANT: All {len(clusters_data)} segment names must be completely unique and different from each other.
+            Create {len(clusters_data)} segments with cluster_id from 0 to {len(clusters_data)-1}.
+            ALL segment names must be completely unique and different from each other.
 
-            Return as JSON array with objects containing: cluster_id, name, description
-
-            Example format:
-            [
-                {{"cluster_id": 0, "name": "Digital Natives", "description": "Young, tech-savvy customers who engage across all channels with high purchase frequency."}},
-                {{"cluster_id": 1, "name": "Email Loyalists", "description": "Mature customers who prefer email communication and have moderate purchase activity."}},
-                {{"cluster_id": 2, "name": "Social Browsers", "description": "Facebook-focused users with low purchase history, primarily window shopping."}}
-            ]
+            Return the segments following the SegmentNameList model structure.
             """
             
             task = Task(
                 description=task_description,
                 agent=agent,
-                expected_output="JSON array of segment names and descriptions"
+                expected_output="Structured list of segment names following SegmentNameList model",
+                output_pydantic=SegmentNameList
             )
             
             logger.debug("Executing naming task...")
             # Execute task
             result = task.execute()
-            logger.debug(f"AI Agent response: {result}")
             
-            # Parse the result
-            segment_names = json.loads(result)
-            # Ensure unique names
-            segment_names = ensure_unique_segment_names(segment_names)
-            logger.info(f"Successfully generated {len(segment_names)} unique AI segment names")
+            # Extract segment names from result
+            if isinstance(result, SegmentNameList):
+                segment_names = [seg.dict() for seg in result.segments]
+                logger.info(f"Successfully generated {len(segment_names)} unique AI segment names")
+            else:
+                # Try to parse as JSON
+                parsed = json.loads(result) if isinstance(result, str) else result
+                validated = SegmentNameList(segments=parsed['segments'])
+                segment_names = [seg.dict() for seg in validated.segments]
+            
             for name in segment_names:
                 logger.debug(f"Segment {name['cluster_id']}: {name['name']} - {name['description']}")
             
@@ -248,68 +334,44 @@ def generate_default_segment_names(clusters_data: List[Dict[str, Any]]) -> List[
     
     # Pre-define unique name patterns to avoid duplicates
     name_patterns = [
-        ("Premium", "High-Value"),
-        ("Engaged", "Active"),
-        ("Potential", "Emerging")
+        ("Premium Beauty", "High-value customers seeking premium skincare solutions"),
+        ("Social Shoppers", "Engaged customers who discover products through social media"),
+        ("Email Enthusiasts", "Loyal customers who prefer email communications and offers")
     ]
     
     for i, cluster in enumerate(clusters_data):
+        if i < len(name_patterns):
+            name, base_desc = name_patterns[i]
+        else:
+            name = f"Segment {i + 1}"
+            base_desc = "Customer segment with unique characteristics"
+        
         characteristics = cluster.get("characteristics", {})
         channel_dist = cluster.get("channel_distribution", {})
         
-        # Determine purchase level
-        avg_purchases = characteristics.get("avg_purchases", 0)
-        if avg_purchases >= 2:
-            purchase_level = "Frequent Buyers"
-        elif avg_purchases >= 1:
-            purchase_level = "Regular Shoppers"
-        else:
-            purchase_level = "New Prospects"
-        
         # Determine primary channel
         primary_channel = max(channel_dist.items(), key=lambda x: x[1])[0] if channel_dist else "multi"
-        channel_name = {
-            "email": "Email",
-            "facebook": "Social",
-            "google_seo": "Search",
-            "multi": "Multi-Channel"
-        }.get(primary_channel, "Digital")
         
-        # Use pattern to ensure uniqueness
-        pattern = name_patterns[i % len(name_patterns)]
-        name = f"{pattern[0]} {channel_name} {purchase_level}"
+        # Build description
+        avg_purchases = characteristics.get("avg_purchases", 0)
+        description = f"{base_desc}. "
+        description += f"Average {avg_purchases:.1f} purchases per customer."
         
-        description = f"Customers aged {characteristics.get('age_range', 'various')} who primarily engage via {primary_channel}. "
-        description += f"Average {avg_purchases:.1f} purchases per user, with {characteristics.get('high_purchasers_pct', 0)}% being frequent buyers."
+        # Marketing focus
+        if avg_purchases >= 2:
+            marketing_focus = "Retention and upselling to maximize customer lifetime value"
+        elif avg_purchases >= 1:
+            marketing_focus = "Engagement campaigns to increase purchase frequency"
+        else:
+            marketing_focus = "Conversion-focused campaigns to drive first purchases"
         
         default_names.append({
             "cluster_id": i,
             "name": name,
-            "description": description
+            "description": description,
+            "marketing_focus": marketing_focus
         })
         
         logger.debug(f"Default name for cluster {i}: {name}")
     
     return default_names
-
-def ensure_unique_segment_names(segment_names: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Ensure all segment names are unique by appending numbers if needed"""
-    seen_names = {}
-    unique_names = []
-    
-    for segment in segment_names:
-        base_name = segment.get("name", f"Segment {segment.get('cluster_id', 0) + 1}")
-        
-        if base_name in seen_names:
-            seen_names[base_name] += 1
-            unique_name = f"{base_name} {seen_names[base_name]}"
-        else:
-            seen_names[base_name] = 1
-            unique_name = base_name
-        
-        unique_names.append({
-            **segment,
-            "name": unique_name
-        })
-    
-    return unique_names

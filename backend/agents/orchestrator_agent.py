@@ -121,7 +121,7 @@ async def rebalance_budgets() -> List[Dict[str, Any]]:
                     reason += " - Decreased to reallocate to better performers"
                 
                 rebalance_results.append({
-                    "campaign_id": ensure_str(campaign.id),
+                    "campaign_id": campaign.id,
                     "campaign_name": campaign.name,
                     "old_budget": old_budget,
                     "new_budget": new_budget,

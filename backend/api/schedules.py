@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel
@@ -178,3 +178,45 @@ async def get_upcoming_schedules(
     ).all()
     
     return schedules
+
+
+@router.get("/calendar", response_model=List[Dict[str, Any]])
+async def get_calendar_schedules(
+    session: Session = Depends(get_session),
+    year: int = Query(..., description="Year"),
+    month: int = Query(..., description="Month (1-12)")
+):
+    """Get schedules for calendar view"""
+    from datetime import timedelta
+    from calendar import monthrange
+    
+    # Get the first and last day of the month
+    _, last_day = monthrange(year, month)
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    
+    # Get all schedules for the month
+    schedules = session.exec(
+        select(Schedule)
+        .where(Schedule.scheduled_time >= start_date)
+        .where(Schedule.scheduled_time <= end_date)
+        .where(Schedule.status.in_(["pending", "executing"]))
+        .order_by(Schedule.scheduled_time)
+    ).all()
+    
+    # Group by day
+    calendar_data = []
+    for schedule in schedules:
+        campaign = schedule.campaign
+        if campaign:
+            calendar_data.append({
+                "date": schedule.scheduled_time.date().isoformat(),
+                "time": schedule.scheduled_time.strftime("%H:%M"),
+                "campaign_id": str(schedule.campaign_id),
+                "campaign_name": campaign.name,
+                "channel": campaign.channel,
+                "frequency": campaign.frequency,
+                "status": schedule.status
+            })
+    
+    return calendar_data

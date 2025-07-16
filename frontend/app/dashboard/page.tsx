@@ -11,14 +11,13 @@ import CampaignCalendar from '@/components/CampaignCalendar';
 import GameController from '../../components/GameController';
 import SetupInfoDisplay from '../../components/SetupInfoDisplay';
 import SpendOptimizationChart from '../../components/SpendOptimizationChart';
-import { Campaign, ChannelMetrics, CustomerSegment, Schedule, Company, Product } from '@/lib/types';
+import { Campaign, ChannelMetrics, CustomerSegment, Company, Product } from '@/lib/types';
 
 export default function Dashboard() {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [channelMetrics, setChannelMetrics] = useState<ChannelMetrics[]>([]);
   const [segments, setSegments] = useState<CustomerSegment[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
   const [product, setProduct] = useState<Product | null>(null);
   const [optimizationData, setOptimizationData] = useState<any[]>([]);
@@ -76,7 +75,7 @@ export default function Dashboard() {
 
       // Load other dashboard data in parallel
       const [campaignsData, metricsData, segmentsData, optimizationData] = await Promise.all([
-        campaignApi.list({ status: 'active' }),
+        campaignApi.list(), // Get all campaigns, not just active ones for the summary
         metricsApi.getChannelMetrics(7),
         agentApi.getSegments(),
         gameStateApi.getOptimizationData(30)
@@ -103,7 +102,7 @@ export default function Dashboard() {
   };
 
   const handleCampaignUpdate = async () => {
-    const updatedCampaigns = await campaignApi.list({ status: 'active' });
+    const updatedCampaigns = await campaignApi.list();
     setCampaigns(updatedCampaigns);
   };
 
@@ -213,8 +212,14 @@ export default function Dashboard() {
           <div className="card">
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total Active Campaigns</span>
+                <span className="text-gray-600">Total Campaigns</span>
                 <span className="text-2xl font-bold text-gray-900">{campaigns.length}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Active Campaigns</span>
+                <span className="text-xl font-bold text-green-600">
+                  {campaigns.filter(c => c.status === 'active').length}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Total Monthly Budget</span>
@@ -226,10 +231,13 @@ export default function Dashboard() {
                 <p className="text-sm text-gray-500 mb-2">By Channel:</p>
                 {['facebook', 'email', 'google_seo'].map(channel => {
                   const channelCampaigns = campaigns.filter(c => c.channel === channel);
+                  const activeCampaigns = channelCampaigns.filter(c => c.status === 'active');
                   return (
                     <div key={channel} className="flex justify-between text-sm">
                       <span className="capitalize">{channel.replace('_', ' ')}</span>
-                      <span>{channelCampaigns.length} campaigns</span>
+                      <span>
+                        {activeCampaigns.length} active / {channelCampaigns.length} total
+                      </span>
                     </div>
                   );
                 })}
@@ -242,6 +250,12 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Campaign Calendar */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Campaign Calendar</h2>
+        <CampaignCalendar currentMonth={gameDate} />
       </div>
 
       {/* Quick Actions */}

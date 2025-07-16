@@ -8,23 +8,24 @@ import logging
 from data.database import engine
 from data.models import Campaign, Schedule, SetupConfiguration
 from agents.crew_factory import create_campaign_crew
+from agents.orchestrator_agent import rebalance_budgets
 from core.scheduler import schedule_recurring_campaign
 from backend.services.crew_service import CrewService
 from backend.services.metrics_generator_service import MetricsGeneratorService
 
 logger = logging.getLogger(__name__)
 
-def ensure_uuid(value: Union[str, UUID]) -> UUID:
-    """Convert string to UUID if needed"""
-    if isinstance(value, str):
-        return UUID(value)
-    return value
+# def ensure_uuid(value: Union[str, UUID]) -> UUID:
+#     """Convert string to UUID if needed"""
+#     if isinstance(value, str):
+#         return UUID(value)
+#     return value
 
-def ensure_str(value: Union[str, UUID]) -> str:
-    """Convert UUID to string if needed"""
-    if isinstance(value, UUID):
-        return str(value)
-    return value
+# def ensure_str(value: Union[str, UUID]) -> str:
+#     """Convert UUID to string if needed"""
+#     if isinstance(value, UUID):
+#         return str(value)
+#     return value
 
 class CampaignService:
     def __init__(self, session: Session):
@@ -32,9 +33,57 @@ class CampaignService:
         self.crew_service = CrewService()
         self.metrics_service = MetricsGeneratorService()
     
+    async def create_campaign(self, campaign_data: Dict[str, Any]) -> Campaign:
+        """Create a new campaign and trigger budget rebalancing"""
+        # Create campaign with initial budget of 0 or minimal amount
+        campaign = Campaign(
+            product_id=campaign_data.get('product_id'),
+            name=campaign_data['name'],
+            description=campaign_data.get('description'),
+            channel=campaign_data['channel'],
+            customer_segment=campaign_data.get('customer_segment'),
+            frequency=campaign_data.get('frequency', 'weekly'),
+            budget=0.0,  # Start with 0 budget
+            status="draft"
+        )
+        
+        self.session.add(campaign)
+        self.session.commit()
+        self.session.refresh(campaign)
+        
+        logger.info(f"Created campaign {campaign.name} with initial budget of 0")
+        
+        # Trigger budget rebalancing after adding new campaign
+        try:
+            await self._trigger_budget_rebalance()
+        except Exception as e:
+            logger.error(f"Error triggering budget rebalance: {str(e)}")
+            # Don't fail campaign creation if rebalancing fails
+        
+        return campaign
+    
+    async def _trigger_budget_rebalance(self):
+        """Trigger budget rebalancing across all campaigns"""
+        logger.info("Triggering automatic budget rebalancing after campaign creation")
+        
+        try:
+            rebalance_results = await rebalance_budgets()
+            
+            if rebalance_results:
+                logger.info(f"Budget rebalancing completed. Updated {len(rebalance_results)} campaigns")
+                for result in rebalance_results:
+                    logger.debug(f"Campaign {result['campaign_name']}: "
+                               f"${result['old_budget']:.0f} -> ${result['new_budget']:.0f}")
+            else:
+                logger.info("No budget changes made during rebalancing")
+                
+        except Exception as e:
+            logger.error(f"Error during budget rebalancing: {str(e)}")
+            raise
+    
     async def activate_campaign(self, campaign_id: Union[str, UUID]) -> Campaign:
         """Activate a campaign and schedule it"""
-        campaign_uuid = ensure_uuid(campaign_id)
+        campaign_uuid = campaign_id
         
         campaign = self.session.get(Campaign, campaign_uuid)
         if not campaign:
@@ -43,15 +92,24 @@ class CampaignService:
         if campaign.status == "active":
             return campaign
         
+        # Ensure campaign has budget before activation
+        if campaign.budget <= 0:
+            # Trigger rebalancing if no budget
+            await self._trigger_budget_rebalance()
+            self.session.refresh(campaign)
+            
+            if campaign.budget <= 0:
+                raise ValueError("Campaign cannot be activated without budget allocation")
+        
         # Update status
         campaign.status = "active"
         campaign.updated_at = datetime.utcnow()
         
         # Schedule recurring execution based on frequency
         if campaign.frequency:
-            job_id = f"campaign_{ensure_str(campaign_uuid)}_recurring"
+            job_id = f"campaign_{str(campaign_uuid)}_recurring"
             schedule_recurring_campaign(
-                ensure_str(campaign_uuid),  # Scheduler needs string
+                campaign_uuid,  # Scheduler needs string
                 campaign.frequency,
                 job_id
             )
@@ -74,7 +132,7 @@ class CampaignService:
     
     async def execute_campaign(self, campaign_id: Union[str, UUID]) -> Dict[str, Any]:
         """Execute a campaign using CrewAI agents"""
-        campaign_uuid = ensure_uuid(campaign_id)
+        campaign_uuid = campaign_id
         
         with Session(engine) as session:
             campaign = session.get(Campaign, campaign_uuid)
@@ -101,7 +159,7 @@ class CampaignService:
                     campaign_id=campaign_uuid,  # Pass UUID object
                     channel=campaign.channel,
                     product_info={
-                        "id": ensure_str(campaign.product_id),
+                        "id": campaign.product_id,
                         "name": campaign.product.product_name if campaign.product else "",
                         "description": campaign.product.description if campaign.product else ""
                     },
@@ -139,7 +197,7 @@ class CampaignService:
                 return {
                     **result,
                     "metrics_generated": True,
-                    "metric_id": ensure_str(metric.id)
+                    "metric_id": metric.id
                 }
                 
             except Exception as e:

@@ -1,143 +1,237 @@
 # backend/api/campaigns.py
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List, Optional
+from uuid import UUID
 from datetime import datetime
-import json
 
 from data.database import get_session
-from data.models import Campaign, CampaignStatus, CompanyDetails, CustomerSegment
+from data.models import Campaign, Product, ContentAsset
 from backend.services.campaign_service import CampaignService
 from pydantic import BaseModel
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 class CampaignCreate(BaseModel):
+    product_id: UUID
     name: str
-    description: str
+    description: Optional[str] = None
     channel: str
-    segment_id: int
-    frequency_days: int
-    assigned_budget: float
-    theme: Optional[str] = None
-    strategy: Optional[str] = None
+    customer_segment: Optional[str] = None
+    frequency: str = "daily"
+    start_date: Optional[datetime] = None
+    budget: float
 
 class CampaignUpdate(BaseModel):
-    status: Optional[CampaignStatus] = None
-    assigned_budget: Optional[float] = None
-    frequency_days: Optional[int] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    frequency: Optional[str] = None
+    start_date: Optional[datetime] = None
+    budget: Optional[float] = None
+    status: Optional[str] = None
 
-class CompanySetup(BaseModel):
-    product_name: str
-    product_description: str
-    firm_name: str
-    firm_details: str
-    market_details: str
-    strategic_goals: str
-    monthly_budget: float
-    guardrails: str
-    rebalancing_frequency_days: int = 7
-    max_campaigns_to_generate: int = 10
+class CampaignResponse(BaseModel):
+    id: UUID
+    product_id: Optional[UUID]
+    name: str
+    description: Optional[str]
+    channel: str
+    customer_segment: Optional[str]
+    frequency: Optional[str]
+    start_date: Optional[datetime]
+    budget: float
+    status: str
+    created_at: datetime
+    updated_at: datetime
 
-@router.post("/setup")
-async def setup_company(setup_data: CompanySetup, session: Session = Depends(get_session)):
-    """Initial company setup"""
-    # Check if company already exists
-    existing = session.exec(select(CompanyDetails)).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Company already setup")
-    
-    company = CompanyDetails(**setup_data.dict())
-    session.add(company)
-    session.commit()
-    session.refresh(company)
-    
-    return {"message": "Company setup complete", "company_id": company.id}
-
-@router.post("/upload-firm-pdf")
-async def upload_firm_pdf(file: UploadFile = File(...), session: Session = Depends(get_session)):
-    """Upload and process firm details PDF"""
-    # In a real implementation, this would process the PDF
-    # For now, we'll simulate extraction
-    content = await file.read()
-    
-    # Simulated extraction
-    extracted_text = f"Extracted from {file.filename}: Company overview and details..."
-    
-    return {"extracted_text": extracted_text}
-
-@router.get("/", response_model=List[Campaign])
+@router.get("/", response_model=List[CampaignResponse])
 async def list_campaigns(
-    status: Optional[CampaignStatus] = None,
-    channel: Optional[str] = None,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    channel: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(100, le=100)
 ):
     """List all campaigns with optional filters"""
     query = select(Campaign)
     
-    if status:
-        query = query.where(Campaign.status == status)
     if channel:
         query = query.where(Campaign.channel == channel)
+    if status:
+        query = query.where(Campaign.status == status)
     
+    query = query.limit(limit)
     campaigns = session.exec(query).all()
+    
     return campaigns
 
-@router.post("/", response_model=Campaign)
-async def create_campaign(
-    campaign_data: CampaignCreate,
+@router.get("/{campaign_id}", response_model=CampaignResponse)
+async def get_campaign(
+    campaign_id: UUID,
     session: Session = Depends(get_session)
 ):
-    """Create a new campaign"""
-    campaign = Campaign(**campaign_data.dict())
-    campaign.current_budget = campaign.assigned_budget
-    
-    session.add(campaign)
-    session.commit()
-    session.refresh(campaign)
-    
-    return campaign
-
-@router.get("/{campaign_id}", response_model=Campaign)
-async def get_campaign(campaign_id: int, session: Session = Depends(get_session)):
     """Get a specific campaign"""
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    
     return campaign
 
-@router.patch("/{campaign_id}")
-async def update_campaign(
-    campaign_id: int,
-    update_data: CampaignUpdate,
+@router.post("/", response_model=CampaignResponse)
+async def create_campaign(
+    campaign_data: CampaignCreate,
     session: Session = Depends(get_session)
 ):
-    """Update campaign details"""
+    """Create a new campaign with automatic scheduling"""
+    # Verify product exists
+    product = session.get(Product, campaign_data.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Use CampaignService to create campaign with auto-scheduling and rebalancing
+    service = CampaignService(session)
+    
+    try:
+        campaign = await service.create_campaign({
+            "product_id": campaign_data.product_id,
+            "name": campaign_data.name,
+            "description": campaign_data.description,
+            "channel": campaign_data.channel,
+            "customer_segment": campaign_data.customer_segment,
+            "frequency": campaign_data.frequency,
+            "start_date": campaign_data.start_date or datetime.utcnow(),
+            "budget": campaign_data.budget,
+            "status": "active"  # Set to active by default to enable scheduling
+        })
+        
+        logger.info(f"Created campaign {campaign.name} with 6 months of schedules")
+        return campaign
+        
+    except Exception as e:
+        logger.error(f"Error creating campaign: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating campaign: {str(e)}")
+
+@router.put("/{campaign_id}", response_model=CampaignResponse)
+async def update_campaign(
+    campaign_id: UUID,
+    campaign_update: CampaignUpdate,
+    session: Session = Depends(get_session)
+):
+    """Update a campaign"""
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    update_dict = update_data.dict(exclude_unset=True)
-    for key, value in update_dict.items():
-        setattr(campaign, key, value)
+    # Track if frequency or start_date changed
+    frequency_changed = False
+    start_date_changed = False
+    
+    # Update fields
+    update_data = campaign_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        if field == "frequency" and value != campaign.frequency:
+            frequency_changed = True
+        if field == "start_date" and value != campaign.start_date:
+            start_date_changed = True
+        setattr(campaign, field, value)
     
     campaign.updated_at = datetime.utcnow()
     session.add(campaign)
     session.commit()
+    session.refresh(campaign)
+    
+    # If frequency or start_date changed, recreate schedules
+    if (frequency_changed or start_date_changed) and campaign.status == "active":
+        service = CampaignService(session)
+        await service._create_campaign_schedules(campaign, months=6)
+        logger.info(f"Recreated schedules for campaign {campaign.name} due to frequency/start_date change")
     
     return campaign
 
-@router.post("/{campaign_id}/approve")
-async def approve_campaign(campaign_id: int, session: Session = Depends(get_session)):
-    """Approve a campaign for execution"""
+@router.delete("/{campaign_id}")
+async def delete_campaign(
+    campaign_id: UUID,
+    session: Session = Depends(get_session)
+):
+    """Delete a campaign and its schedules"""
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    campaign.status = CampaignStatus.APPROVED
-    campaign.updated_at = datetime.utcnow()
+    # Cancel all scheduled jobs
+    from data.models import Schedule
+    from backend.core.scheduler import cancel_job
     
-    session.add(campaign)
+    schedules = session.query(Schedule).filter(
+        Schedule.campaign_id == campaign_id,
+        Schedule.status == "pending"
+    ).all()
+    
+    for schedule in schedules:
+        if schedule.job_id:
+            cancel_job(schedule.job_id)
+    
+    session.delete(campaign)
     session.commit()
     
-    return {"message": "Campaign approved", "campaign_id": campaign_id}
+    return {"message": "Campaign and its schedules deleted successfully"}
+
+@router.post("/{campaign_id}/activate", response_model=CampaignResponse)
+async def activate_campaign(
+    campaign_id: UUID,
+    session: Session = Depends(get_session)
+):
+    """Activate a campaign"""
+    service = CampaignService(session)
+    campaign = await service.activate_campaign(campaign_id)
+    
+    return campaign
+
+@router.post("/{campaign_id}/pause", response_model=CampaignResponse)
+async def pause_campaign(
+    campaign_id: UUID,
+    session: Session = Depends(get_session)
+):
+    """Pause a campaign and cancel pending schedules"""
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    # Cancel pending schedules
+    from data.models import Schedule
+    from backend.core.scheduler import cancel_job
+    
+    pending_schedules = session.query(Schedule).filter(
+        Schedule.campaign_id == campaign_id,
+        Schedule.status == "pending"
+    ).all()
+    
+    for schedule in pending_schedules:
+        if schedule.job_id:
+            cancel_job(schedule.job_id)
+        schedule.status = "cancelled"
+        session.add(schedule)
+    
+    campaign.status = "paused"
+    campaign.updated_at = datetime.utcnow()
+    session.add(campaign)
+    session.commit()
+    session.refresh(campaign)
+    
+    logger.info(f"Paused campaign {campaign.name} and cancelled {len(pending_schedules)} pending schedules")
+    
+    return campaign
+
+@router.get("/{campaign_id}/content", response_model=List[ContentAsset])
+async def get_campaign_content(
+    campaign_id: UUID,
+    session: Session = Depends(get_session)
+):
+    """Get all content assets for a campaign"""
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    return campaign.content_assets

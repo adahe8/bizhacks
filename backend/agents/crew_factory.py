@@ -1,166 +1,146 @@
 # backend/agents/crew_factory.py
-from crewai import Crew, Task, Agent
-from typing import List, Dict, Any
-import os
-from dotenv import load_dotenv
+from crewai import Crew, Process
+from typing import Dict, Any, List, Union
+from uuid import UUID
+import logging
+import json
 
-load_dotenv()
+from backend.agents.content_agents.email_agent import create_email_content_agent, create_email_content_task
+from backend.agents.content_agents.facebook_agent import create_facebook_content_agent, create_facebook_content_task  
+from backend.agents.content_agents.google_seo_agent import create_google_seo_content_agent, create_google_seo_content_task
+from backend.agents.compliance_agent import create_compliance_agent, create_compliance_task
+from backend.agents.campaign_execution_agent import create_execution_agent, create_execution_task
 
-# Import all agent definitions
-from .segmentation_agent import SegmentationAgent
-from .campaign_creation_agent import CampaignCreationAgent
-from .orchestrator_agent import OrchestratorAgent
-from .content_agents import EmailContentAgent, FacebookContentAgent, GoogleAdsContentAgent
-from .compliance_agent import ComplianceAgent
-from .execution_agent import CampaignExecutionAgent
-from .metrics_agent import MetricsGatherAgent
+logger = logging.getLogger(__name__)
 
-class CrewFactory:
-    """Factory class to create and manage CrewAI crews"""
+def ensure_str(value: Union[str, UUID]) -> str:
+    """Convert UUID to string if needed"""
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
+def create_campaign_crew(
+    campaign_id: Union[str, UUID],
+    channel: str,
+    product_info: Dict[str, Any],
+    market_details: str,
+    strategic_goals: str,
+    guardrails: str
+) -> Crew:
+    """Create a crew for campaign execution"""
     
-    def __init__(self):
-        self.llm_api_key = os.getenv("OPENAI_API_KEY", "")
-        
-    def create_segmentation_crew(self, company_data: Dict[str, Any], customer_data: List[Dict]) -> Crew:
-        """Create a crew for customer segmentation"""
-        agent = SegmentationAgent(api_key=self.llm_api_key)
-        
-        task = Task(
-            description=f"""
-            Analyze the provided customer data and company information to create meaningful customer segments.
-            
-            Company Info:
-            - Product: {company_data.get('product_name')}
-            - Strategic Goals: {company_data.get('strategic_goals')}
-            - Market Details: {company_data.get('market_details')}
-            
-            Create 3-5 distinct customer segments based on demographics, behavior, and purchase patterns.
-            Each segment should have a clear name, description, and key characteristics.
-            """,
-            agent=agent.agent,
-            expected_output="JSON list of customer segments with names, descriptions, and characteristics"
-        )
-        
-        return Crew(
-            agents=[agent.agent],
-            tasks=[task],
-            verbose=True
-        )
+    # Ensure campaign_id is string for crew context
+    campaign_id_str = ensure_str(campaign_id)
     
-    def create_campaign_generation_crew(self, company_data: Dict, segments: List[Dict]) -> Crew:
-        """Create a crew for generating campaign ideas"""
-        agent = CampaignCreationAgent(api_key=self.llm_api_key)
-        
-        tasks = []
-        for segment in segments:
-            task = Task(
-                description=f"""
-                Create innovative marketing campaign ideas for the following segment:
-                
-                Segment: {segment['name']}
-                Description: {segment['description']}
-                
-                Company Product: {company_data.get('product_name')}
-                Budget: ${company_data.get('monthly_budget')}
-                Goals: {company_data.get('strategic_goals')}
-                
-                Generate 3-5 campaign ideas for each channel (Facebook, Email, Google Ads).
-                Each campaign should have:
-                - Name and description
-                - Target frequency
-                - Estimated budget allocation
-                - Key messaging themes
-                """,
-                agent=agent.agent,
-                expected_output="JSON list of campaign ideas with all required details"
-            )
-            tasks.append(task)
-        
-        return Crew(
-            agents=[agent.agent],
-            tasks=tasks,
-            verbose=True
-        )
+    # Parse market details if it's a JSON string
+    if isinstance(market_details, str):
+        try:
+            market_details_dict = json.loads(market_details)
+            market_details_str = f"Target: {market_details_dict.get('target_demographics', 'N/A')}, Market Size: {market_details_dict.get('market_size', 'N/A')}"
+        except:
+            market_details_str = market_details
+    else:
+        market_details_str = str(market_details)
     
-    def create_content_generation_crew(self, campaign: Dict, channel: str, company_data: Dict) -> Crew:
-        """Create a crew for content generation with compliance checking"""
-        # Select appropriate content agent based on channel
-        content_agents = {
-            'facebook': FacebookContentAgent(api_key=self.llm_api_key),
-            'email': EmailContentAgent(api_key=self.llm_api_key),
-            'google_ads': GoogleAdsContentAgent(api_key=self.llm_api_key)
-        }
-        
-        content_agent = content_agents.get(channel)
-        compliance_agent = ComplianceAgent(api_key=self.llm_api_key)
-        
-        # Content generation task
-        content_task = Task(
-            description=f"""
-            Create {channel} content for the following campaign:
-            
-            Campaign: {campaign['name']}
-            Description: {campaign['description']}
-            Theme: {campaign.get('theme', 'General')}
-            
-            Product: {company_data.get('product_name')}
-            Brand Guidelines: {company_data.get('guardrails')}
-            
-            Generate engaging, on-brand content appropriate for {channel}.
-            """,
-            agent=content_agent.agent,
-            expected_output=f"Complete {channel} content ready for publishing"
-        )
-        
-        # Compliance review task
-        compliance_task = Task(
-            description=f"""
-            Review the generated content for compliance with brand guidelines:
-            
-            Guidelines: {company_data.get('guardrails')}
-            
-            Check for:
-            - Brand voice consistency
-            - Appropriate messaging
-            - Legal compliance
-            - No prohibited content
-            
-            If non-compliant, provide specific feedback for revision.
-            """,
-            agent=compliance_agent.agent,
-            expected_output="Compliance approval or specific revision requirements"
-        )
-        
-        return Crew(
-            agents=[content_agent.agent, compliance_agent.agent],
-            tasks=[content_task, compliance_task],
-            verbose=True
-        )
+    # Create context for tasks
+    context = {
+        "campaign_id": campaign_id_str,
+        "product_name": product_info.get("name", "Product"),
+        "product_description": product_info.get("description", ""),
+        "strategic_goals": strategic_goals,
+        "market_details": market_details_str
+    }
     
-    def create_orchestration_crew(self, campaigns: List[Dict], metrics: List[Dict]) -> Crew:
-        """Create a crew for budget orchestration"""
-        agent = OrchestratorAgent(api_key=self.llm_api_key)
-        
-        task = Task(
-            description=f"""
-            Analyze campaign performance metrics and reallocate budgets optimally.
-            
-            Current Campaigns: {len(campaigns)}
-            
-            Consider:
-            - ROI and conversion rates
-            - Cost per acquisition
-            - Engagement metrics
-            - Strategic goals alignment
-            
-            Provide new budget allocations for each campaign.
-            """,
-            agent=agent.agent,
-            expected_output="JSON with campaign IDs and new budget allocations"
-        )
-        
-        return Crew(
-            agents=[agent.agent],
-            tasks=[task],
-            verbose=True
-        )
+    # Select content agent based on channel
+    if channel == "email":
+        content_agent = create_email_content_agent(product_info, market_details_str)
+        content_task = create_email_content_task(content_agent, context)
+    elif channel == "facebook":
+        content_agent = create_facebook_content_agent(product_info, market_details_str)
+        content_task = create_facebook_content_task(content_agent, context)
+    elif channel == "google_seo":
+        content_agent = create_google_seo_content_agent(product_info, market_details_str)
+        content_task = create_google_seo_content_task(content_agent, context)
+    else:
+        raise ValueError(f"Unsupported channel: {channel}")
+    
+    # Create compliance agent and task
+    compliance_agent = create_compliance_agent(guardrails)
+    compliance_task = create_compliance_task(compliance_agent, guardrails)
+    
+    # Create execution agent and task
+    execution_agent = create_execution_agent(channel)
+    execution_task = create_execution_task(execution_agent, channel, campaign_id_str)
+    
+    # Set task dependencies
+    compliance_task.context = [content_task]
+    execution_task.context = [compliance_task]
+    
+    # Create crew with sequential process
+    crew = Crew(
+        agents=[content_agent, compliance_agent, execution_agent],
+        tasks=[content_task, compliance_task, execution_task],
+        process=Process.sequential,
+        verbose=True
+    )
+    
+    logger.info(f"Created campaign crew for {channel} channel")
+    return crew
+
+def create_segmentation_crew(
+    product_info: Dict[str, Any],
+    market_details: Dict[str, Any],
+    user_data: List[Dict[str, Any]]
+) -> Crew:
+    """Create a crew for customer segmentation"""
+    from agents.segmentation_agent import create_segmentation_agent
+    
+    segmentation_agent = create_segmentation_agent(product_info, market_details, user_data)
+    
+    crew = Crew(
+        agents=[segmentation_agent],
+        process=Process.sequential,
+        verbose=True
+    )
+    
+    logger.info("Created segmentation crew")
+    return crew
+
+def create_campaign_ideation_crew(
+    segments: List[str],
+    channels: List[str],
+    strategic_goals: str,
+    budget: float
+) -> Crew:
+    """Create a crew for campaign idea generation"""
+    from agents.campaign_creation_agent import create_campaign_ideation_agent
+    
+    ideation_agent = create_campaign_ideation_agent(
+        segments, channels, strategic_goals, budget
+    )
+    
+    crew = Crew(
+        agents=[ideation_agent],
+        process=Process.sequential,
+        verbose=True
+    )
+    
+    logger.info("Created campaign ideation crew")
+    return crew
+
+def create_orchestration_crew() -> Crew:
+    """Create a crew for budget orchestration and optimization"""
+    from agents.orchestrator_agent import create_orchestrator_agent
+    from agents.metrics_gather_agent import create_metrics_agent
+    
+    metrics_agent = create_metrics_agent()
+    orchestrator_agent = create_orchestrator_agent()
+    
+    crew = Crew(
+        agents=[metrics_agent, orchestrator_agent],
+        process=Process.sequential,
+        verbose=True
+    )
+    
+    logger.info("Created orchestration crew")
+    return crew

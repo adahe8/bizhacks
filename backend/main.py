@@ -1,65 +1,82 @@
+# backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
-from dotenv import load_dotenv
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import logging
+from typing import Dict
 
-# Load environment variables
-load_dotenv()
+from backend.core.config import settings
+from backend.core.scheduler import scheduler
+from data.database import init_db
+from backend.api import campaigns, schedules, agents, setup, metrics, gamestate
+from backend.external_apis.mock_media import router as mock_router
 
-# Import database setup
-from data.database import create_db_and_tables
-from data.models import *
-
-# Import routers
-from backend.api import campaigns, schedules, agents
-
-# Import scheduler
-from backend.core.scheduler import scheduler, start_scheduler
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle startup and shutdown events"""
+    """Manage application lifecycle"""
     # Startup
-    print("Starting up...")
-    create_db_and_tables()
-    start_scheduler()
+    logger.info("Starting BizHacks Marketing Platform...")
+    
+    # Initialize database
+    init_db()
+    logger.info("Database initialized")
+    
+    # Start scheduler
+    scheduler.start()
+    logger.info("Scheduler started")
+    
     yield
+    
     # Shutdown
-    print("Shutting down...")
+    logger.info("Shutting down...")
     scheduler.shutdown()
+    logger.info("Scheduler stopped")
 
-# Create FastAPI app
 app = FastAPI(
-    title="BizHacks Campaign Manager",
-    description="Agentic Marketing Campaign Management System",
-    version="1.0.0",
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
     lifespan=lifespan
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_origins=["http://localhost:3000"],  # Frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include routers
+app.include_router(setup.router, prefix="/api/setup", tags=["setup"])
 app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
 app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
+app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
+app.include_router(gamestate.router, prefix="/api/gamestate", tags=["gamestate"])
+
+# Include mock endpoints for development
+app.include_router(mock_router, prefix="/mock", tags=["mock"])
 
 @app.get("/")
-async def root():
-    return {"message": "BizHacks Campaign Manager API", "status": "running"}
+def read_root() -> Dict[str, str]:
+    """Root endpoint"""
+    return {
+        "message": "Welcome to BizHacks Marketing Platform API",
+        "version": settings.APP_VERSION,
+        "docs": "/docs"
+    }
 
 @app.get("/health")
-async def health_check():
+def health_check() -> Dict[str, str]:
+    """Health check endpoint"""
     return {"status": "healthy"}
 
 if __name__ == "__main__":
@@ -68,5 +85,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True  # Set to False in production
+        reload=settings.DEBUG
     )

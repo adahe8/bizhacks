@@ -1,49 +1,49 @@
-# FastAPI and Server
+# Core Framework
 fastapi
 uvicorn[standard]
 python-multipart
 
 # Database
 sqlmodel
-sqlalchemy
 alembic
 
 # AI/ML
 crewai
+google-generativeai
 langchain
-langchain-openai
-openai
+langchain-google-genai
 
 # Scheduling
 apscheduler
-
-# API and HTTP
-httpx
-requests
-aiohttp
 
 # Data Processing
 pandas
 numpy
 pydantic
 pydantic-settings
+tabulate 
+
+# Optimization
+scipy
+scikit-learn
+
+# API Clients
+httpx
+aiohttp
 
 # Utilities
 python-dotenv
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
 python-dateutil
-pytz
 
-# File Processing
-pypdf
-python-docx
-openpyxl
-
-# Testing (optional)
+# Testing
 pytest
 pytest-asyncio
 pytest-cov
 
-# Development (optional)
+# Development
 black
 flake8
 mypy

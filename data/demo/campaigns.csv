@@ -1,0 +1,13 @@
+id,product_id,campaign_name,budget,start_date,end_date,objective,company_id,channel
+29348889-291c-4ad3-a6fa-d9c234fc071b,8764c545-7bfc-4786-8015-8804b6e0bd84,Hydration Boost,75000,2025-01-23,2025-02-16,Promote new moisturizing products with influencer partnerships,dd4b84f8-5023-4212-9c17-cab8f0754c6b,facebook
+328c6bc4-6488-4498-9dbf-6d563b092947,6521c269-5566-4a71-86b5-cf87f16390c9,Radiance Routine,75000,2025-01-26,2025-02-18,Launch bundle for radiant skin through multi-channel outreach,99eb676b-bbbb-4c46-b874-184179e9b581,facebook
+3872d61a-7177-4dc2-9379-7284c670c93d,ebfec0d4-04aa-433c-9e54-d5fb0307b924,Radiance Routine,50000,2025-04-15,2025-04-26,Launch bundle for radiant skin through multi-channel outreach,c5d00be4-9e36-4dff-b20c-3de73c248f79,facebook
+3e2bad64-e5b5-48ad-bd1a-9ce04817f766,474d419e-ebaf-48fa-8ea9-b0b9b8cb8bae,Hydration Boost,75000,2025-05-11,2025-05-26,Promote new moisturizing products with influencer partnerships,c5d00be4-9e36-4dff-b20c-3de73c248f79,email
+62fd6be4-7ab4-47ff-957d-13ce387bc459,86e30a06-1eee-466f-9d78-acb091d64d9b,Radiance Routine,100000,2025-01-25,2025-02-07,Launch bundle for radiant skin through multi-channel outreach,dd4b84f8-5023-4212-9c17-cab8f0754c6b,email
+67716ddf-8f23-4aab-b284-88da60c6627d,53149c00-c49b-435d-89c2-aab51ff14d55,Minimalist Beauty,100000,2025-07-06,2025-07-26,Educate customers on simple routines with curated kits,2667ceb5-4998-4859-8ccc-bc86c937da4e,email
+85601460-cedf-48eb-bcdb-5e094ae8b6c2,eb79f806-9675-4e02-8cc2-64d3226e4aec,Clear Skin Challenge,100000,2025-01-21,2025-02-14,Drive conversions for acne-treatment line via UGC,b80ed0d3-98a9-4b31-b3c0-409cdf7ef4a3,google_ads
+a056a641-9708-4ccb-a39d-314063245815,f6e2bc76-d9b1-429d-9824-ef2a4dcf90aa,Glow Up Summer,50000,2025-06-26,2025-07-16,Increase brand engagement through seasonal skincare content,c857386b-e805-4a98-ab00-e6aa029444da,google_ads
+bc026308-62cb-4877-9209-322fd2e6acd9,46e1133a-229f-4c95-a77e-2df5c61c0c2f,Minimalist Beauty,25000,2025-05-03,2025-05-13,Educate customers on simple routines with curated kits,b80ed0d3-98a9-4b31-b3c0-409cdf7ef4a3,google_ads
+d06d750b-6f64-4754-a4ae-32ad0781ebdf,43720375-f042-4e5d-95f5-1cb34391645a,Festival Ready,75000,2025-07-11,2025-08-08,Drive awareness for limited-edition festival products,99eb676b-bbbb-4c46-b874-184179e9b581,google_ads
+d77ec810-6e37-4c6f-8513-61cb86bc636d,1f4f6c05-553e-4276-b0b5-6c26cbd7b9b0,Minimalist Beauty,75000,2025-03-17,2025-04-12,Educate customers on simple routines with curated kits,c857386b-e805-4a98-ab00-e6aa029444da,email
+e9c3201d-c03a-411a-96be-7607cefc6395,71bda02c-1c30-4c7c-aa82-103dd244b9d0,Hydration Boost,75000,2025-04-03,2025-04-13,Promote new moisturizing products with influencer partnerships,2667ceb5-4998-4859-8ccc-bc86c937da4e,email

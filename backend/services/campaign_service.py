@@ -1,115 +1,166 @@
 # backend/services/campaign_service.py
-from sqlmodel import Session, select
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import asyncio
+from sqlmodel import Session
+from typing import Dict, Any
+from uuid import UUID
+from datetime import datetime, timedelta
 import logging
-import json
-from typing import List, Dict, Any
 
-from data.database import get_db_session
-from data.models import Campaign, Content, CampaignStatus, ChannelType
-from backend.agents.crew_factory import CrewFactory
-from backend.external_apis.facebook_client import FacebookClient
-from backend.external_apis.email_client import EmailClient
-from backend.external_apis.google_ads_client import GoogleAdsClient
+from data.models import Campaign, Schedule
+from backend.core.scheduler import schedule_campaign_execution, schedule_recurring_campaign, cancel_job
+from backend.agents.orchestrator_agent import rebalance_budgets
 
 logger = logging.getLogger(__name__)
 
 class CampaignService:
-    """Service for campaign operations"""
+    def __init__(self, session: Session):
+        self.session = session
     
-    @staticmethod
-    async def execute_campaign(campaign_id: int):
-        """Execute a single campaign"""
-        with get_db_session() as session:
-            campaign = session.get(Campaign, campaign_id)
-            if not campaign or campaign.status != CampaignStatus.RUNNING:
-                logger.warning(f"Campaign {campaign_id} not found or not running")
-                return
-            
-            try:
-                # Get company details
-                from data.models import CompanyDetails
-                company = session.exec(select(CompanyDetails)).first()
-                
-                # Create content generation crew
-                crew_factory = CrewFactory()
-                crew = crew_factory.create_content_generation_crew(
-                    campaign=campaign.dict(),
-                    channel=campaign.channel.value,
-                    company_data=company.dict()
-                )
-                
-                # Execute crew to generate content
-                result = crew.kickoff()
-                
-                # Parse result and save content
-                content_data = json.loads(result) if isinstance(result, str) else result
-                
-                content = Content(
-                    campaign_id=campaign_id,
-                    channel=campaign.channel,
-                    content_type=content_data.get('type', 'text'),
-                    content_data=json.dumps(content_data),
-                    compliance_approved=True  # Assuming compliance passed in crew
-                )
-                
-                session.add(content)
-                session.commit()
-                
-                # Publish content
-                await CampaignService._publish_content(content, campaign.channel)
-                
-                # Update campaign execution time
-                campaign.last_execution = datetime.utcnow()
-                session.add(campaign)
-                session.commit()
-                
-                logger.info(f"Successfully executed campaign {campaign_id}")
-                
-            except Exception as e:
-                logger.error(f"Error executing campaign {campaign_id}: {str(e)}")
+    async def create_campaign(self, campaign_data: Dict[str, Any]) -> Campaign:
+        """Create a new campaign and schedule it"""
+        campaign = Campaign(**campaign_data)
+        self.session.add(campaign)
+        self.session.commit()
+        self.session.refresh(campaign)
+        
+        # Automatically create schedules based on frequency and start_date
+        if campaign.frequency and campaign.start_date:
+            await self._create_campaign_schedules(campaign, months=6)
+            logger.info(f"Created campaign {campaign.name} with 6 months of schedules")
+        
+        # Trigger budget rebalancing for all active campaigns
+        await rebalance_budgets()
+        
+        return campaign
     
-    @staticmethod
-    async def execute_campaigns_parallel(campaign_ids: List[int]):
-        """Execute multiple campaigns in parallel"""
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = []
-            for campaign_id in campaign_ids:
-                future = executor.submit(
-                    asyncio.run,
-                    CampaignService.execute_campaign(campaign_id)
-                )
-                futures.append(future)
+    async def activate_campaign(self, campaign_id: UUID) -> Campaign:
+        """Activate a campaign and create schedules if not already created"""
+        campaign = self.session.get(Campaign, campaign_id)
+        if not campaign:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        
+        # Update status
+        campaign.status = "active"
+        campaign.updated_at = datetime.utcnow()
+        
+        # Check if schedules already exist
+        existing_schedules = self.session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id
+        ).count()
+        
+        # Create schedules if none exist
+        if existing_schedules == 0 and campaign.frequency and campaign.start_date:
+            await self._create_campaign_schedules(campaign, months=6)
+        
+        self.session.add(campaign)
+        self.session.commit()
+        self.session.refresh(campaign)
+        
+        logger.info(f"Activated campaign {campaign.name} with frequency {campaign.frequency}")
+        
+        return campaign
+    
+    async def _create_campaign_schedules(self, campaign: Campaign, months: int = 6):
+        """Create schedule entries based on campaign frequency for specified months"""
+        if not campaign.frequency or not campaign.start_date:
+            return
+        
+        # Clear existing pending schedules
+        existing_schedules = self.session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id,
+            Schedule.status == "pending"
+        ).all()
+        
+        for schedule in existing_schedules:
+            if schedule.job_id:
+                cancel_job(schedule.job_id)
+            self.session.delete(schedule)
+        
+        # Create new schedules for the specified period (default 6 months)
+        current_date = campaign.start_date
+        end_date = current_date + timedelta(days=30 * months)  # Approximate months
+        
+        schedule_count = 0
+        while current_date <= end_date:
+            # Create schedule entry
+            job_id = f"{campaign.id}_{current_date.isoformat()}"
+            schedule = Schedule(
+                campaign_id=campaign.id,
+                scheduled_time=current_date,
+                status="pending",
+                job_id=job_id
+            )
+            self.session.add(schedule)
             
-            # Wait for all to complete
-            for future in as_completed(futures):
+            # Schedule with APScheduler
+            schedule_campaign_execution(str(campaign.id), current_date, job_id)
+            schedule_count += 1
+            
+            # Calculate next date based on frequency
+            if campaign.frequency == "daily":
+                current_date += timedelta(days=1)
+            elif campaign.frequency == "weekly":
+                current_date += timedelta(weeks=1)
+            elif campaign.frequency == "monthly":
+                # More accurate monthly calculation
+                # Add one month properly (handle month boundaries)
+                if current_date.month == 12:
+                    next_month = 1
+                    next_year = current_date.year + 1
+                else:
+                    next_month = current_date.month + 1
+                    next_year = current_date.year
+                
                 try:
-                    future.result()
-                except Exception as e:
-                    logger.error(f"Error in parallel execution: {str(e)}")
+                    current_date = current_date.replace(month=next_month, year=next_year)
+                except ValueError:
+                    # Handle cases like Jan 31 -> Feb 31 (doesn't exist)
+                    # Move to last day of next month
+                    import calendar
+                    last_day = calendar.monthrange(next_year, next_month)[1]
+                    current_date = current_date.replace(month=next_month, year=next_year, day=last_day)
+            else:
+                break
+        
+        self.session.commit()
+        logger.info(f"Created {schedule_count} schedules for campaign {campaign.name} over {months} months")
+
+async def execute_campaign(campaign_id: str):
+    """Execute a campaign (called by scheduler)"""
+    from sqlmodel import Session
+    from data.database import engine
+    from backend.agents.campaign_execution_agent import execute_campaign_content
     
-    @staticmethod
-    async def _publish_content(content: Content, channel: ChannelType):
-        """Publish content to external platform"""
-        content_data = json.loads(content.content_data)
+    with Session(engine) as session:
+        campaign = session.get(Campaign, UUID(campaign_id))
+        if not campaign:
+            logger.error(f"Campaign {campaign_id} not found")
+            return
+        
+        # Find the schedule being executed
+        schedule = session.query(Schedule).filter(
+            Schedule.campaign_id == campaign.id,
+            Schedule.status == "pending"
+        ).order_by(Schedule.scheduled_time).first()
+        
+        if schedule:
+            schedule.status = "executing"
+            session.add(schedule)
+            session.commit()
         
         try:
-            if channel == ChannelType.FACEBOOK:
-                client = FacebookClient()
-                result = await client.publish_post(content_data)
-            elif channel == ChannelType.EMAIL:
-                client = EmailClient()
-                result = await client.send_campaign(content_data)
-            elif channel == ChannelType.GOOGLE_ADS:
-                client = GoogleAdsClient()
-                result = await client.create_ad(content_data)
+            # Execute the campaign
+            logger.info(f"Executing campaign {campaign.name}")
+            await execute_campaign_content(campaign_id)
             
-            # Update content with external ID
-            content.published = True
-            content.published_at = datetime.utcnow()
-            content.external_id = result.get('id')
-            
+            if schedule:
+                schedule.status = "completed"
+                schedule.executed_at = datetime.utcnow()
+                session.add(schedule)
+                session.commit()
+                
         except Exception as e:
-            logger.error(f"Error publishing content: {str(e)}")
-            raise
+            logger.error(f"Error executing campaign {campaign_id}: {str(e)}")
+            if schedule:
+                schedule.status = "failed"
+                session.add(schedule)
+                session.commit()

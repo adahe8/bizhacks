@@ -1,84 +1,121 @@
 # backend/external_apis/google_ads_client.py
-import random
-import asyncio
+import httpx
+from typing import Dict, Any
 from datetime import datetime
-from typing import Dict, Any, List
-import uuid
+import random
+import logging
+
+from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class GoogleAdsClient:
-    """Mock Google Ads API client"""
+    """Client for Google Ads API (Mock Implementation)"""
     
     def __init__(self):
-        self.customer_id = "123-456-7890"
-        self.api_version = "v15"
+        self.api_endpoint = settings.GOOGLE_ADS_API_ENDPOINT
+        self.api_key = settings.GOOGLE_ADS_API_KEY
     
-    async def create_ad(self, content_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Simulate creating a Google Ad"""
-        await asyncio.sleep(random.uniform(0.8, 1.8))
+    async def publish_content(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """Create and publish Google Ads campaign"""
         
-        ad_id = f"gad_{uuid.uuid4().hex[:12]}"
-        
-        return {
-            "id": ad_id,
-            "campaign_id": content_data.get("campaign_id"),
-            "ad_group_id": f"adg_{uuid.uuid4().hex[:8]}",
-            "type": content_data.get("ad_type", "SEARCH"),
-            "headline1": content_data.get("headline1", ""),
-            "headline2": content_data.get("headline2", ""),
-            "description": content_data.get("description", ""),
-            "final_url": content_data.get("final_url", ""),
-            "status": "ENABLED",
-            "created_at": datetime.utcnow().isoformat()
-        }
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock response for development
+                ads_content = content.get("ads_content", {})
+                return {
+                    "campaign_id": f"google_{datetime.utcnow().timestamp()}",
+                    "ad_group_id": f"adgroup_{random.randint(100000, 999999)}",
+                    "status": "active",
+                    "ads_created": len(ads_content.get("headlines", [])),
+                    "keywords": ads_content.get("keywords", []),
+                    "created_at": datetime.utcnow().isoformat()
+                }
+            else:
+                # Real API call
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.api_endpoint}/campaigns",
+                        json={
+                            "campaign_name": content.get("campaign_name", ""),
+                            "ad_group": {
+                                "headlines": content.get("ads_content", {}).get("headlines", []),
+                                "descriptions": content.get("ads_content", {}).get("descriptions", []),
+                                "keywords": content.get("ads_content", {}).get("keywords", []),
+                                "negative_keywords": content.get("ads_content", {}).get("negative_keywords", [])
+                            },
+                            "budget": content.get("daily_budget", 50),
+                            "bidding_strategy": "maximize_conversions"
+                        },
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Developer-Token": settings.GOOGLE_ADS_API_KEY
+                        }
+                    )
+                    response.raise_for_status()
+                    return response.json()
+                    
+        except Exception as e:
+            logger.error(f"Error creating Google Ads campaign: {str(e)}")
+            raise
     
-    async def get_ad_performance(self, ad_id: str) -> Dict[str, Any]:
-        """Simulate fetching ad performance metrics"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
+    async def get_metrics(self, asset_id: str, published_at: datetime = None) -> Dict[str, Any]:
+        """Get Google Ads campaign metrics"""
         
-        impressions = random.randint(10000, 200000)
-        clicks = int(impressions * random.uniform(0.02, 0.08))
-        cost = clicks * random.uniform(0.50, 3.00)
-        conversions = int(clicks * random.uniform(0.02, 0.10))
-        
-        return {
-            "ad_id": ad_id,
-            "impressions": impressions,
-            "clicks": clicks,
-            "cost": round(cost, 2),
-            "conversions": conversions,
-            "conversion_value": round(conversions * random.uniform(20, 100), 2),
-            "ctr": round((clicks / impressions) * 100, 2) if impressions > 0 else 0,
-            "avg_cpc": round(cost / clicks, 2) if clicks > 0 else 0,
-            "conversion_rate": round((conversions / clicks) * 100, 2) if clicks > 0 else 0,
-            "quality_score": random.randint(5, 10),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    async def get_keyword_ideas(self, seed_keywords: List[str]) -> List[Dict[str, Any]]:
-        """Simulate fetching keyword ideas"""
-        await asyncio.sleep(random.uniform(0.5, 1.0))
-        
-        keyword_ideas = []
-        for seed in seed_keywords:
-            for i in range(random.randint(3, 8)):
-                keyword_ideas.append({
-                    "keyword": f"{seed} {random.choice(['best', 'top', 'cheap', 'quality', 'review'])}",
-                    "avg_monthly_searches": random.randint(100, 10000),
-                    "competition": random.choice(["LOW", "MEDIUM", "HIGH"]),
-                    "bid_range_low": round(random.uniform(0.20, 1.00), 2),
-                    "bid_range_high": round(random.uniform(1.00, 5.00), 2)
-                })
-        
-        return keyword_ideas
-    
-    async def update_budget(self, campaign_id: str, new_budget: float) -> Dict[str, Any]:
-        """Simulate updating campaign budget"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
-        
-        return {
-            "campaign_id": campaign_id,
-            "old_budget": random.uniform(100, 1000),
-            "new_budget": new_budget,
-            "status": "updated",
-            "updated_at": datetime.utcnow().isoformat()
-        }
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock metrics for development
+                days_since_launch = (datetime.utcnow() - published_at).days if published_at else 1
+                daily_impressions = random.randint(500, 5000)
+                
+                impressions = daily_impressions * days_since_launch
+                ctr = random.uniform(0.02, 0.08)  # Click-through rate
+                clicks = int(impressions * ctr)
+                
+                return {
+                    "asset_id": asset_id,
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "engagement_rate": ctr,  # CTR for Google Ads
+                    "conversion_rate": random.uniform(0.01, 0.04),
+                    "cpa": random.uniform(15.0, 75.0),
+                    "average_cpc": random.uniform(0.50, 3.00),
+                    "quality_score": random.randint(5, 10),
+                    "search_impression_share": random.uniform(0.10, 0.50)
+                }
+            else:
+                # Real API call
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.api_endpoint}/campaigns/{asset_id}/metrics",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Developer-Token": settings.GOOGLE_ADS_API_KEY
+                        },
+                        params={
+                            "metrics": ["impressions", "clicks", "conversions", "cost_per_conversion"],
+                            "date_range": "ALL_TIME"
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # Process and return metrics
+                    metrics = data.get("metrics", {})
+                    impressions = metrics.get("impressions", 0)
+                    clicks = metrics.get("clicks", 0)
+                    
+                    return {
+                        "asset_id": asset_id,
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "engagement_rate": clicks / impressions if impressions > 0 else 0,
+                        "conversion_rate": metrics.get("conversion_rate", 0),
+                        "cpa": metrics.get("cost_per_conversion", 0),
+                        "average_cpc": metrics.get("average_cpc", 0),
+                        "quality_score": metrics.get("quality_score", 0)
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error getting Google Ads metrics: {str(e)}")
+            raise

@@ -1,319 +1,355 @@
-// app/dashboard/page.tsx
+// frontend/app/dashboard/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import { toast } from "react-hot-toast";
-import axios from "axios";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
-  FaFacebook,
-  FaEnvelope,
-  FaGoogle,
-  FaChartLine,
-  FaPlus,
-  FaPlay,
-  FaPause,
-  FaUsers,
-} from "react-icons/fa";
-import SetupModals from "@/components/SetupModals";
-import CampaignCard from "@/components/CampaignCard";
+  campaignApi,
+  metricsApi,
+  agentApi,
+  setupApi,
+  gameStateApi,
+} from "@/lib/api";
 import MetricsVisualization from "@/components/MetricsVisualization";
+import CampaignCard from "@/components/CampaignCard";
 import CustomerSegments from "@/components/CustomerSegments";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-interface Campaign {
-  id: number;
-  name: string;
-  description: string;
-  channel: string;
-  status: string;
-  assigned_budget: number;
-  current_budget: number;
-  frequency_days: number;
-  segment: {
-    name: string;
-  };
-}
-
-interface Metrics {
-  channel: string;
-  impressions: number;
-  clicks: number;
-  conversions: number;
-  spend: number;
-  roi: number;
-}
-
-interface Segment {
-  id: number;
-  name: string;
-  description: string;
-  size_estimate: number;
-}
+import CampaignCalendar from "@/components/CampaignCalendar";
+import GameController from "../../components/GameController";
+import SetupInfoDisplay from "../../components/SetupInfoDisplay";
+import SpendOptimizationChart from "../../components/SpendOptimizationChart";
+import {
+  Campaign,
+  ChannelMetrics,
+  CustomerSegment,
+  Company,
+  Product,
+} from "@/lib/types";
 
 export default function Dashboard() {
-  const [isFirstVisit, setIsFirstVisit] = useState(false);
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [metrics, setMetrics] = useState<Metrics[]>([]);
-  const [segments, setSegments] = useState<Segment[]>([]);
+  const [channelMetrics, setChannelMetrics] = useState<ChannelMetrics[]>([]);
+  const [segments, setSegments] = useState<CustomerSegment[]>([]);
+  const [company, setCompany] = useState<Company | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [optimizationData, setOptimizationData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [gameDate, setGameDate] = useState(new Date());
+  const [showSetupIncomplete, setShowSetupIncomplete] = useState(false);
 
   useEffect(() => {
     checkSetupAndLoadData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const checkSetupAndLoadData = async () => {
     try {
-      // Check if company is setup
-      const response = await axios.get(`${API_BASE}/api/campaigns/`);
-      if (response.data.length === 0) {
-        // Check if this is truly first visit by checking company setup
-        try {
-          await axios.get(`${API_BASE}/api/company/details`);
-        } catch (error: any) {
-          if (error.response?.status === 404) {
-            setIsFirstVisit(true);
-          }
-        }
+      // First check if setup is complete
+      const setup = await setupApi.getCurrent();
+
+      if (!setup || !setup.is_active) {
+        // No setup or inactive, redirect to home for wizard
+        router.push("/");
+        return;
       }
 
-      // Load data
-      await Promise.all([loadCampaigns(), loadMetrics(), loadSegments()]);
+      // Check if setup has all required fields
+      if (!setup.company_id || !setup.product_id || !setup.monthly_budget) {
+        setShowSetupIncomplete(true);
+        setLoading(false);
+        return;
+      }
+
+      // Setup is complete, load dashboard data
+      await loadDashboardData(setup);
     } catch (error) {
       console.error("Error checking setup:", error);
-      toast.error("Failed to load dashboard data");
+      // On error, redirect to setup wizard
+      router.push("/");
+    }
+  };
+
+  const loadDashboardData = async (setup: any) => {
+    try {
+      // Load company and product info
+      if (setup.company_id && setup.product_id) {
+        const [companies, products] = await Promise.all([
+          setupApi.getCompanies(),
+          setupApi.getProducts(),
+        ]);
+
+        const currentCompany = companies.find(
+          (c: any) => c.id === setup.company_id
+        );
+        const currentProduct = products.find(
+          (p: any) => p.id === setup.product_id
+        );
+
+        setCompany(currentCompany);
+        setProduct(currentProduct);
+      }
+
+      // Load other dashboard data in parallel
+      const [campaignsData, metricsData, segmentsData, optimizationData] =
+        await Promise.all([
+          campaignApi.list(), // Get all campaigns, not just active ones for the summary
+          metricsApi.getChannelMetrics(7),
+          agentApi.getSegments(),
+          gameStateApi.getOptimizationData(30),
+        ]);
+
+      setCampaigns(campaignsData);
+      setChannelMetrics(metricsData);
+      setSegments(segmentsData);
+
+      // Process optimization data for the chart
+      const processedOptData = optimizationData.map((item: any) => ({
+        date: new Date(item.date),
+        optimal: item.optimal,
+        nonOptimal: item.nonOptimal,
+      }));
+
+      setOptimizationData(processedOptData);
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadCampaigns = async () => {
+  const handleCampaignUpdate = async () => {
+    const updatedCampaigns = await campaignApi.list();
+    setCampaigns(updatedCampaigns);
+  };
+
+  // Use useCallback to prevent function recreation on every render
+  const handleDateChange = useCallback((date: Date) => {
+    setGameDate(date);
+    // Don't automatically refresh data on date change to avoid loops
+  }, []);
+
+  // Separate function for manual refresh
+  const refreshOptimizationData = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_BASE}/api/campaigns/`);
-      setCampaigns(response.data);
+      const optimizationData = await gameStateApi.getOptimizationData(30);
+      const processedOptData = optimizationData.map((item: any) => ({
+        date: new Date(item.date),
+        optimal: item.optimal,
+        nonOptimal: item.nonOptimal,
+      }));
+      setOptimizationData(processedOptData);
     } catch (error) {
-      console.error("Error loading campaigns:", error);
+      console.error("Error refreshing optimization data:", error);
     }
-  };
-
-  const loadMetrics = async () => {
-    try {
-      // Mock metrics for now
-      const mockMetrics: Metrics[] = [
-        {
-          channel: "facebook",
-          impressions: 125000,
-          clicks: 3750,
-          conversions: 187,
-          spend: 1250,
-          roi: 2.4,
-        },
-        {
-          channel: "email",
-          impressions: 50000,
-          clicks: 2500,
-          conversions: 250,
-          spend: 500,
-          roi: 5.2,
-        },
-        {
-          channel: "google_ads",
-          impressions: 200000,
-          clicks: 4000,
-          conversions: 320,
-          spend: 2000,
-          roi: 3.1,
-        },
-      ];
-      setMetrics(mockMetrics);
-    } catch (error) {
-      console.error("Error loading metrics:", error);
-    }
-  };
-
-  const loadSegments = async () => {
-    try {
-      // Mock segments for now
-      const mockSegments: Segment[] = [
-        {
-          id: 1,
-          name: "Young Professionals",
-          description: "Age 25-35, urban, high disposable income",
-          size_estimate: 15000,
-        },
-        {
-          id: 2,
-          name: "Family Oriented",
-          description: "Parents with children, suburban",
-          size_estimate: 25000,
-        },
-        {
-          id: 3,
-          name: "Health Conscious",
-          description: "Fitness enthusiasts, organic buyers",
-          size_estimate: 12000,
-        },
-      ];
-      setSegments(mockSegments);
-    } catch (error) {
-      console.error("Error loading segments:", error);
-    }
-  };
-
-  const handleSetupComplete = async () => {
-    setIsFirstVisit(false);
-    toast.success("Setup completed successfully!");
-    await checkSetupAndLoadData();
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await checkSetupAndLoadData();
-    setRefreshing(false);
-    toast.success("Dashboard refreshed");
-  };
-
-  const getChannelIcon = (channel: string) => {
-    switch (channel) {
-      case "facebook":
-        return <FaFacebook className="text-blue-600" />;
-      case "email":
-        return <FaEnvelope className="text-green-600" />;
-      case "google_ads":
-        return <FaGoogle className="text-red-600" />;
-      default:
-        return null;
-    }
-  };
-
-  const getChannelMetrics = (channel: string) => {
-    return metrics.find((m) => m.channel === channel) || null;
-  };
+  }, []); // No dependencies - this function doesn't rely on any state
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (showSetupIncomplete) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Setup Incomplete
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Please complete the setup wizard to continue.
+          </p>
+          <button onClick={() => router.push("/")} className="btn-primary">
+            Complete Setup
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Setup Modals for First Visit */}
-      {isFirstVisit && <SetupModals onComplete={handleSetupComplete} />}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Company and Product Info */}
+      <SetupInfoDisplay company={company} product={product} />
 
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Marketing Campaign Dashboard
-            </h1>
-            <div className="flex space-x-4">
-              <button
-                onClick={() => (window.location.href = "/create")}
-                className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              >
-                <FaPlus className="mr-2" />
-                New Campaign
-              </button>
-              <button
-                onClick={handleRefresh}
-                className={`inline-flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 ${
-                  refreshing ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-                disabled={refreshing}
-              >
-                <FaChartLine className="mr-2" />
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </button>
+      {/* Game Controller */}
+      <div className="mb-6">
+        <GameController onDateChange={handleDateChange} />
+      </div>
+
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">
+          Marketing Dashboard
+        </h1>
+        <p className="text-gray-600 mt-2">
+          Monitor and manage your omni-channel campaigns
+        </p>
+      </div>
+
+      {/* Optimization Performance Chart */}
+      <div className="mb-8">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Optimization Performance
+            </h2>
+            <button
+              onClick={refreshOptimizationData}
+              className="text-sm text-primary-600 hover:text-primary-700"
+            >
+              Refresh Data
+            </button>
+          </div>
+          <SpendOptimizationChart data={optimizationData} />
+          {optimizationData.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <p>No optimization data available yet.</p>
+              <p className="text-sm mt-2">
+                Run campaigns to see performance metrics.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Channel Metrics */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Channel Performance
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {channelMetrics.map((metric) => (
+            <MetricsVisualization key={metric.channel} metrics={metric} />
+          ))}
+        </div>
+      </div>
+
+      {/* Customer Segments and Active Campaigns Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            Customer Segments
+          </h2>
+          <CustomerSegments segments={segments} />
+        </div>
+
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            Campaign Summary
+          </h2>
+          <div className="card">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Total Campaigns</span>
+                <span className="text-2xl font-bold text-gray-900">
+                  {campaigns.length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Active Campaigns</span>
+                <span className="text-xl font-bold text-green-600">
+                  {campaigns.filter((c) => c.status === "active").length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Total Monthly Budget</span>
+                <span className="text-xl font-bold text-gray-900">
+                  $
+                  {campaigns
+                    .reduce((sum, c) => sum + c.budget, 0)
+                    .toLocaleString()}
+                </span>
+              </div>
+              <div className="pt-3 border-t">
+                <p className="text-sm text-gray-500 mb-2">By Channel:</p>
+                {["facebook", "email", "google_seo"].map((channel) => {
+                  const channelCampaigns = campaigns.filter(
+                    (c) => c.channel === channel
+                  );
+                  const activeCampaigns = channelCampaigns.filter(
+                    (c) => c.status === "active"
+                  );
+                  return (
+                    <div key={channel} className="flex justify-between text-sm">
+                      <span className="capitalize">
+                        {channel.replace("_", " ")}
+                      </span>
+                      <span>
+                        {activeCampaigns.length} active /{" "}
+                        {channelCampaigns.length} total
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="pt-3">
+                <a href="/campaigns" className="btn-primary w-full text-center">
+                  View All Campaigns
+                </a>
+              </div>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Metrics Overview */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Channel Performance Overview
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {["facebook", "email", "google_ads"].map((channel) => {
-              const channelMetrics = getChannelMetrics(channel);
-              return (
-                <div key={channel} className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center">
-                      {getChannelIcon(channel)}
-                      <h3 className="ml-2 text-lg font-medium capitalize">
-                        {channel.replace("_", " ")}
-                      </h3>
-                    </div>
-                  </div>
-                  {channelMetrics && (
-                    <MetricsVisualization metrics={channelMetrics} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+      {/* Campaign Calendar */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Campaign Calendar
+        </h2>
+        <CampaignCalendar currentMonth={gameDate} />
+      </div>
 
-        {/* Customer Segments */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Customer Segments
-            </h2>
-            <button
-              onClick={() =>
-                toast("Segment analysis in progress...", {
-                  icon: "📊",
-                  duration: 3000,
-                })
+      {/* Quick Actions */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Quick Actions
+        </h3>
+        <div className="flex flex-wrap gap-4">
+          <button
+            onClick={async () => {
+              await metricsApi.collectMetrics();
+              await refreshOptimizationData();
+              alert("Metrics collection triggered");
+            }}
+            className="btn-outline"
+          >
+            Refresh Metrics
+          </button>
+          <button
+            onClick={async () => {
+              await agentApi.rebalanceBudgets();
+              alert("Budget rebalancing triggered");
+            }}
+            className="btn-outline"
+          >
+            Rebalance Budgets
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                await agentApi.generateSegments();
+                const newSegments = await agentApi.getSegments();
+                setSegments(newSegments);
+                alert("Customer segments updated successfully");
+              } catch (error) {
+                console.error("Error generating segments:", error);
+                alert(
+                  "Failed to generate segments. Check your GEMINI_API_KEY configuration."
+                );
               }
-              className="text-indigo-600 hover:text-indigo-800 flex items-center"
-            >
-              <FaUsers className="mr-2" />
-              Analyze Segments
-            </button>
-          </div>
-          <CustomerSegments segments={segments} />
-        </section>
-
-        {/* Running Campaigns */}
-        <section>
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Active Campaigns (
-            {campaigns.filter((c) => c.status === "running").length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {campaigns.length === 0 ? (
-              <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
-                <p className="text-gray-500 mb-4">No campaigns yet</p>
-                <button
-                  onClick={() => (window.location.href = "/create")}
-                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                >
-                  <FaPlus className="mr-2" />
-                  Create Your First Campaign
-                </button>
-              </div>
-            ) : (
-              campaigns.map((campaign) => (
-                <CampaignCard
-                  key={campaign.id}
-                  campaign={campaign}
-                  onUpdate={loadCampaigns}
-                />
-              ))
-            )}
-          </div>
-        </section>
-      </main>
+            }}
+            className="btn-outline"
+          >
+            Update Segments
+          </button>
+          <button onClick={() => router.push("/")} className="btn-outline">
+            Run Setup Wizard
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,144 +1,195 @@
+# data/models.py
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List
-from datetime import datetime
-from enum import Enum
+from datetime import datetime, date
+from uuid import UUID, uuid4
 import json
 
-
-class ChannelType(str, Enum):
-    FACEBOOK = "facebook"
-    EMAIL = "email"
-    GOOGLE_ADS = "google_ads"
-
-
-class CampaignStatus(str, Enum):
-    DRAFT = "draft"
-    APPROVED = "approved"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-
-
-class CompanyDetails(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    product_name: str
-    product_description: str
-    firm_name: str
-    firm_details: str  # Natural language description from PDF or manual input
-    market_details: str
-    strategic_goals: str
-    monthly_budget: float
-    guardrails: str  # Brand norms and compliance rules
-    rebalancing_frequency_days: int = 7
-    max_campaigns_to_generate: int = 10
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class CustomerSegment(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    description: str
-    characteristics: str  # JSON string of key characteristics
-    size_estimate: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+class Company(SQLModel, table=True):
+    """Company model"""
+    __tablename__ = "companies"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    company_name: Optional[str] = Field(default=None)
+    industry: Optional[str] = Field(default=None)
+    brand_voice: Optional[str] = Field(default=None)
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     
     # Relationships
-    campaigns: List["Campaign"] = Relationship(back_populates="segment")
+    products: List["Product"] = Relationship(back_populates="company")
 
+class Product(SQLModel, table=True):
+    """Product model"""
+    __tablename__ = "products"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    company_id: Optional[UUID] = Field(default=None, foreign_key="companies.id")
+    product_name: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    launch_date: Optional[date] = Field(default=None)
+    target_skin_type: Optional[str] = Field(default=None)
+    
+    # Relationships
+    company: Optional[Company] = Relationship(back_populates="products")
+    campaigns: List["Campaign"] = Relationship(back_populates="product")
+
+class User(SQLModel, table=True):
+    """User/Customer model"""
+    __tablename__ = "users"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)  # Changed to UUID
+    age: Optional[int] = Field(default=None)
+    location: Optional[str] = Field(default=None)
+    skin_type: Optional[str] = Field(default=None)
+    channels_engaged: Optional[str] = Field(default=None)  # JSON string
+    purchase_history: Optional[str] = Field(default=None)  # JSON string
+    
+    @property
+    def channels_engaged_list(self) -> List[str]:
+        if self.channels_engaged:
+            return json.loads(self.channels_engaged)
+        return []
+    
+    @property
+    def purchase_history_list(self) -> List[dict]:
+        if self.purchase_history:
+            return json.loads(self.purchase_history)
+        return []
 
 class Campaign(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    """Campaign model"""
+    __tablename__ = "campaigns"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    product_id: Optional[UUID] = Field(default=None, foreign_key="products.id")
     name: str
-    description: str
-    channel: ChannelType
-    segment_id: int = Field(foreign_key="customersegment.id")
-    status: CampaignStatus = CampaignStatus.DRAFT
-    frequency_days: int  # How often to publish
-    assigned_budget: float
-    current_budget: float  # Adjusted by orchestrator
-    theme: Optional[str] = None
-    strategy: Optional[str] = None
+    description: Optional[str] = Field(default=None)
+    channel: str  # facebook, email, google_seo
+    customer_segment: Optional[str] = Field(default=None)
+    frequency: Optional[str] = Field(default=None)  # daily, weekly, monthly
+    start_date: Optional[datetime] = Field(default=None)  # NEW FIELD
+    budget: float = Field(default=0.0)
+    status: str = Field(default="draft")  # draft, active, paused, completed
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    last_execution: Optional[datetime] = None
-    next_execution: Optional[datetime] = None
     
     # Relationships
-    segment: CustomerSegment = Relationship(back_populates="campaigns")
-    contents: List["Content"] = Relationship(back_populates="campaign")
-    metrics: List["CampaignMetrics"] = Relationship(back_populates="campaign")
+    product: Optional[Product] = Relationship(back_populates="campaigns")
+    content_assets: List["ContentAsset"] = Relationship(back_populates="campaign")
+    metrics: List["Metric"] = Relationship(back_populates="campaign")
+    schedules: List["Schedule"] = Relationship(back_populates="campaign")
 
-
-class Content(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    campaign_id: int = Field(foreign_key="campaign.id")
-    channel: ChannelType
-    content_type: str  # "text", "image", "video", etc.
-    content_data: str  # JSON string with actual content
-    compliance_approved: bool = False
-    compliance_notes: Optional[str] = None
-    published: bool = False
-    published_at: Optional[datetime] = None
-    external_id: Optional[str] = None  # ID from external platform
+class ContentAsset(SQLModel, table=True):
+    """Content Asset model"""
+    __tablename__ = "content_assets"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    campaign_id: Optional[UUID] = Field(default=None, foreign_key="campaigns.id")
+    platform: Optional[str] = Field(default=None)
+    asset_type: Optional[str] = Field(default=None)  # text, image, video
+    copy_text: Optional[str] = Field(default=None)
+    visual_url: Optional[str] = Field(default=None)
+    status: Optional[str] = Field(default="draft")  # draft, approved, published
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    published_at: Optional[datetime] = Field(default=None)
     
     # Relationships
-    campaign: Campaign = Relationship(back_populates="contents")
+    campaign: Optional[Campaign] = Relationship(back_populates="content_assets")
 
+class Metric(SQLModel, table=True):
+    """Metrics model"""
+    __tablename__ = "metrics"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    campaign_id: Optional[UUID] = Field(default=None, foreign_key="campaigns.id")
+    platform: Optional[str] = Field(default=None)
+    clicks: Optional[int] = Field(default=0)
+    impressions: Optional[int] = Field(default=0)
+    engagement_rate: Optional[float] = Field(default=0.0)
+    conversion_rate: Optional[float] = Field(default=0.0)
+    cpa: Optional[float] = Field(default=0.0)  # Cost per acquisition
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    campaign: Optional[Campaign] = Relationship(back_populates="metrics")
+
+# Additional models for the application
+
+class CustomerSegment(SQLModel, table=True):
+    """Customer Segment model"""
+    __tablename__ = "customer_segments"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str
+    description: Optional[str] = Field(default=None)
+    criteria: Optional[str] = Field(default=None)  # JSON string of criteria
+    size: Optional[float] = Field(default=0)  # Percentage of total users
+    channel_distribution: Optional[str] = Field(default=None)  # JSON string of channel percentages
+    cluster_centroid: Optional[str] = Field(default=None)  # JSON string of centroid features
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class CampaignMetrics(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    campaign_id: int = Field(foreign_key="campaign.id")
-    channel: ChannelType
-    metric_date: datetime
-    impressions: int = 0
-    clicks: int = 0
-    conversions: int = 0
-    spend: float = 0.0
-    engagement_rate: float = 0.0
-    ctr: float = 0.0  # Click-through rate
-    cpc: float = 0.0  # Cost per click
-    roi: float = 0.0
-    custom_metrics: Optional[str] = None  # JSON for channel-specific metrics
+    """Campaign-specific metrics configuration"""
+    __tablename__ = "campaign_metrics"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    campaign_id: UUID = Field(foreign_key="campaigns.id", unique=True)
+    channel: str
+    metrics_config: str  # JSON string with mean/variance for each metric
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Schedule(SQLModel, table=True):
+    """Campaign Schedule model"""
+    __tablename__ = "schedules"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    campaign_id: UUID = Field(foreign_key="campaigns.id")
+    scheduled_time: datetime
+    status: str = Field(default="pending")  # pending, executing, completed, failed
+    job_id: Optional[str] = Field(default=None)  # APScheduler job ID
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    executed_at: Optional[datetime] = Field(default=None)
     
     # Relationships
-    campaign: Campaign = Relationship(back_populates="metrics")
+    campaign: Campaign = Relationship(back_populates="schedules")
 
-
-class Customer(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, index=True)
-    name: str
-    interests: Optional[str] = None  # JSON array of interests
-    demographics: Optional[str] = None  # JSON object
-    segment_id: Optional[int] = Field(default=None, foreign_key="customersegment.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+class SetupConfiguration(SQLModel, table=True):
+    """Application Setup Configuration"""
+    __tablename__ = "setup_configurations"
     
-    # Relationships
-    transactions: List["Transaction"] = Relationship(back_populates="customer")
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    product_id: Optional[UUID] = Field(default=None, foreign_key="products.id")
+    company_id: Optional[UUID] = Field(default=None, foreign_key="companies.id")
+    market_details: Optional[str] = Field(default=None)  # JSON string
+    strategic_goals: Optional[str] = Field(default=None)
+    monthly_budget: float = Field(default=0.0)
+    guardrails: Optional[str] = Field(default=None)
+    rebalancing_frequency: str = Field(default="weekly")  # daily, weekly, monthly
+    campaign_count: int = Field(default=5)
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
+class GameState(SQLModel, table=True):
+    """Game state tracking"""
+    __tablename__ = "game_state"
+    
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    current_date: datetime = Field(default_factory=datetime.utcnow)
+    game_speed: str = Field(default="medium")  # slow, medium, fast
+    is_running: bool = Field(default=False)
+    total_reach_optimal: float = Field(default=0.0)
+    total_reach_non_optimal: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Transaction(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    customer_id: int = Field(foreign_key="customer.id")
-    transaction_date: datetime
-    amount: float
-    product_id: Optional[str] = None
-    channel_attribution: Optional[ChannelType] = None
-    campaign_attribution_id: Optional[int] = Field(default=None, foreign_key="campaign.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    """Transaction model for user purchases"""
+    __tablename__ = "transactions"
     
-    # Relationships
-    customer: Customer = Relationship(back_populates="transactions")
-
-
-class MarketingMaterial(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    file_type: str  # "pdf", "image", etc.
-    file_path: str
-    content_extracted: Optional[str] = None  # Extracted text for inspiration
-    # metadata: Optional[str] = None  # JSON metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: str = Field(foreign_key="users.id")
+    product_id: UUID = Field(foreign_key="products.id")
+    amount: float
+    transaction_date: datetime
+    channel: Optional[str] = Field(default=None)
+    campaign_id: Optional[UUID] = Field(default=None, foreign_key="campaigns.id")

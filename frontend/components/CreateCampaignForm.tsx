@@ -1,260 +1,218 @@
-// components/CreateCampaignForm.tsx
-import { useState } from 'react';
-import { toast } from 'react-hot-toast';
-import axios from 'axios';
-import { useRouter } from 'next/navigation';
-import { FaSave, FaTimes } from 'react-icons/fa';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-interface Segment {
-  id: number;
-  name: string;
-  description: string;
-}
-
-interface CreateCampaignFormProps {
-  segments: Segment[];
-  onCancel: () => void;
-}
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { setupApi, agentApi } from '@/lib/api';
+import { CustomerSegment } from '@/lib/types';
 
 interface CampaignFormData {
   name: string;
   description: string;
-  channel: string;
-  segment_id: number;
-  frequency_days: number;
-  assigned_budget: number;
-  theme: string;
-  strategy: string;
+  channel: 'facebook' | 'email' | 'google_seo';
+  customer_segment: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  budget: number;
 }
 
-export default function CreateCampaignForm({ segments, onCancel }: CreateCampaignFormProps) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState<CampaignFormData>({
-    name: '',
-    description: '',
-    channel: 'facebook',
-    segment_id: segments.length > 0 ? segments[0].id : 0,
-    frequency_days: 7,
-    assigned_budget: 1000,
-    theme: '',
-    strategy: ''
+interface Props {
+  initialData?: Partial<CampaignFormData>;
+  onSubmit: (data: any) => void;
+  onCancel: () => void;
+}
+
+export default function CreateCampaignForm({ initialData, onSubmit, onCancel }: Props) {
+  const [currentSetup, setCurrentSetup] = useState<any>(null);
+  const [segments, setSegments] = useState<CustomerSegment[]>([]);
+  
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    watch,
+  } = useForm<CampaignFormData>({
+    defaultValues: initialData || {
+      channel: 'facebook',
+      frequency: 'weekly',
+      budget: 1000,
+    },
   });
 
-  const channels = [
-    { value: 'facebook', label: 'Facebook', color: 'text-blue-600' },
-    { value: 'email', label: 'Email', color: 'text-green-600' },
-    { value: 'google_ads', label: 'Google Ads', color: 'text-red-600' }
-  ];
+  const selectedChannel = watch('channel');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    loadData();
+  }, []);
 
-    // Validation
-    if (!formData.name || !formData.description) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    if (formData.assigned_budget < 100) {
-      toast.error('Budget must be at least $100');
-      return;
-    }
-
+  const loadData = async () => {
     try {
-      setLoading(true);
-      
-      // Create campaign
-      const response = await axios.post(`${API_BASE}/api/campaigns/`, formData);
-      
-      toast.success('Campaign created successfully!');
-      router.push('/dashboard');
+      const [setupData, segmentsData] = await Promise.all([
+        setupApi.getCurrent(),
+        agentApi.getSegments()
+      ]);
+      setCurrentSetup(setupData);
+      setSegments(segmentsData);
     } catch (error) {
-      console.error('Error creating campaign:', error);
-      toast.error('Failed to create campaign');
-    } finally {
-      setLoading(false);
+      console.error('Error loading data:', error);
     }
   };
 
-  const updateField = (field: keyof CampaignFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const getChannelDescription = (channel: string) => {
+    switch (channel) {
+      case 'facebook':
+        return 'Create engaging social media posts with images and videos';
+      case 'email':
+        return 'Design email campaigns with personalized content';
+      case 'google_seo':
+        return 'Optimize for search with targeted keywords and ad copy';
+      default:
+        return '';
+    }
+  };
+
+  const handleFormSubmit = async (data: CampaignFormData) => {
+    if (!currentSetup || !currentSetup.product_id) {
+      alert('No product selected. Please complete the setup wizard.');
+      return;
+    }
+    
+    // Add product_id from setup
+    const submitData = {
+      ...data,
+      product_id: currentSetup.product_id
+    };
+    onSubmit(submitData);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-6">Create New Campaign</h2>
-      
+    <form onSubmit={handleSubmit(handleFormSubmit)} className="card">
+      <h2 className="text-xl font-semibold mb-6">Campaign Details</h2>
+
       <div className="space-y-6">
         {/* Campaign Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Campaign Name <span className="text-red-500">*</span>
-          </label>
+          <label className="label">Campaign Name</label>
           <input
             type="text"
-            value={formData.name}
-            onChange={(e) => updateField('name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="e.g., Summer Sale 2024"
-            required
+            {...register('name', { required: 'Campaign name is required' })}
+            className="input-field"
+            placeholder="Summer Glow Campaign"
           />
+          {errors.name && (
+            <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
+          )}
         </div>
 
-        {/* Campaign Description */}
+        {/* Description */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Description <span className="text-red-500">*</span>
-          </label>
+          <label className="label">Description</label>
           <textarea
-            value={formData.description}
-            onChange={(e) => updateField('description', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            rows={3}
-            placeholder="Describe the campaign goals and key messages..."
-            required
+            {...register('description')}
+            className="input-field h-24"
+            placeholder="Describe the campaign objectives and key messages..."
           />
         </div>
 
         {/* Channel Selection */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Marketing Channel <span className="text-red-500">*</span>
-          </label>
-          <div className="grid grid-cols-3 gap-3">
-            {channels.map(channel => (
-              <button
-                key={channel.value}
-                type="button"
-                onClick={() => updateField('channel', channel.value)}
-                className={`p-3 border-2 rounded-lg text-center transition-all ${
-                  formData.channel === channel.value
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+          <label className="label">Channel</label>
+          <div className="grid grid-cols-3 gap-4">
+            {(['facebook', 'email', 'google_seo'] as const).map((channel) => (
+              <label
+                key={channel}
+                className={`
+                  border rounded-lg p-4 cursor-pointer transition-all
+                  ${selectedChannel === channel
+                    ? 'border-primary-500 bg-primary-50'
+                    : 'border-gray-300 hover:border-gray-400'
+                  }
+                `}
               >
-                <span className={`font-medium ${channel.color}`}>{channel.label}</span>
-              </button>
+                <input
+                  type="radio"
+                  {...register('channel')}
+                  value={channel}
+                  className="sr-only"
+                />
+                <div className="text-center">
+                  <div className="text-2xl mb-2">
+                    {channel === 'facebook' && '📱'}
+                    {channel === 'email' && '✉️'}
+                    {channel === 'google_seo' && '🔍'}
+                  </div>
+                  <p className="font-medium capitalize">{channel.replace('_', ' ')}</p>
+                </div>
+              </label>
             ))}
           </div>
+          <p className="text-sm text-gray-600 mt-2">
+            {getChannelDescription(selectedChannel)}
+          </p>
         </div>
 
         {/* Customer Segment */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Target Segment <span className="text-red-500">*</span>
-          </label>
+          <label className="label">Customer Segment</label>
           <select
-            value={formData.segment_id}
-            onChange={(e) => updateField('segment_id', parseInt(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
+            {...register('customer_segment', { required: 'Customer segment is required' })}
+            className="input-field"
           >
-            {segments.map(segment => (
-              <option key={segment.id} value={segment.id}>
-                {segment.name} - {segment.description}
+            <option value="">Select a segment...</option>
+            {segments.map((segment) => (
+              <option key={segment.id} value={segment.name}>
+                {segment.name} ({segment.size}%)
               </option>
             ))}
           </select>
+          {errors.customer_segment && (
+            <p className="text-red-500 text-sm mt-1">{errors.customer_segment.message}</p>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Publishing Frequency */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Publishing Frequency (days) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              value={formData.frequency_days}
-              onChange={(e) => updateField('frequency_days', parseInt(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              min="1"
-              max="30"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              How often to publish new content
-            </p>
-          </div>
-
-          {/* Budget */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Monthly Budget ($) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              value={formData.assigned_budget}
-              onChange={(e) => updateField('assigned_budget', parseFloat(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              min="100"
-              step="50"
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Initial budget allocation
-            </p>
-          </div>
-        </div>
-
-        {/* Campaign Theme */}
+        {/* Frequency */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Campaign Theme
-          </label>
+          <label className="label">Campaign Frequency</label>
+          <select
+            {...register('frequency')}
+            className="input-field"
+          >
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+
+        {/* Budget */}
+        <div>
+          <label className="label">Monthly Budget (USD)</label>
           <input
-            type="text"
-            value={formData.theme}
-            onChange={(e) => updateField('theme', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="e.g., Summer Vibes, Back to School, Holiday Special"
+            type="number"
+            {...register('budget', {
+              required: 'Budget is required',
+              min: { value: 100, message: 'Minimum budget is $100' },
+            })}
+            className="input-field"
+            placeholder="1000"
+            step="100"
           />
-        </div>
-
-        {/* Strategy */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Strategy & Notes
-          </label>
-          <textarea
-            value={formData.strategy}
-            onChange={(e) => updateField('strategy', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            rows={2}
-            placeholder="Additional strategic notes or special instructions..."
-          />
+          {errors.budget && (
+            <p className="text-red-500 text-sm mt-1">{errors.budget.message}</p>
+          )}
         </div>
       </div>
 
       {/* Form Actions */}
-      <div className="mt-8 flex justify-end space-x-4">
+      <div className="flex gap-4 mt-8">
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="btn-primary flex-1"
+        >
+          {isSubmitting ? 'Creating...' : 'Create Campaign'}
+        </button>
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+          className="btn-outline flex-1"
         >
-          <FaTimes className="mr-2" />
           Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              Creating...
-            </>
-          ) : (
-            <>
-              <FaSave className="mr-2" />
-              Create Campaign
-            </>
-          )}
         </button>
       </div>
     </form>

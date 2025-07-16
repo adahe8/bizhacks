@@ -1,68 +1,105 @@
-
 # backend/external_apis/facebook_client.py
-import random
-import asyncio
-from datetime import datetime
+import httpx
 from typing import Dict, Any
-import uuid
+from datetime import datetime
+import random
+import logging
+
+from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class FacebookClient:
-    """Mock Facebook API client"""
+    """Client for Facebook Marketing API (Mock Implementation)"""
     
     def __init__(self):
-        self.base_url = "https://graph.facebook.com/v18.0"
-        self.page_id = "mock_page_123"
+        self.api_endpoint = settings.FACEBOOK_API_ENDPOINT
+        self.api_key = settings.FACEBOOK_API_KEY
     
-    async def publish_post(self, content_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Simulate publishing a Facebook post"""
-        # Simulate API delay
-        await asyncio.sleep(random.uniform(0.5, 1.5))
+    async def publish_content(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """Publish content to Facebook"""
         
-        post_id = f"fb_{uuid.uuid4().hex[:12]}"
+        # In production, this would make actual API calls
+        # For now, we'll simulate the response
         
-        # Simulate response
-        return {
-            "id": post_id,
-            "created_time": datetime.utcnow().isoformat(),
-            "message": content_data.get("message", ""),
-            "link": content_data.get("link"),
-            "picture": content_data.get("image_url"),
-            "status": "published"
-        }
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock response for development
+                return {
+                    "post_id": f"fb_{datetime.utcnow().timestamp()}",
+                    "status": "published",
+                    "url": f"https://facebook.com/posts/{random.randint(100000, 999999)}",
+                    "media_url": None,
+                    "published_at": datetime.utcnow().isoformat()
+                }
+            else:
+                # Real API call
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.api_endpoint}/posts",
+                        json={
+                            "message": content.get("primary_text", ""),
+                            "link": content.get("link"),
+                            "targeting": content.get("targeting", {}),
+                            "scheduled_publish_time": content.get("post_time")
+                        },
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}"
+                        }
+                    )
+                    response.raise_for_status()
+                    return response.json()
+                    
+        except Exception as e:
+            logger.error(f"Error publishing to Facebook: {str(e)}")
+            raise
     
-    async def get_post_metrics(self, post_id: str) -> Dict[str, Any]:
-        """Simulate fetching post metrics"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
+    async def get_metrics(self, asset_id: str, published_at: datetime = None) -> Dict[str, Any]:
+        """Get metrics for a published post"""
         
-        # Generate random metrics
-        return {
-            "post_id": post_id,
-            "impressions": random.randint(1000, 50000),
-            "reach": random.randint(800, 40000),
-            "engagement": {
-                "likes": random.randint(50, 2000),
-                "comments": random.randint(5, 200),
-                "shares": random.randint(2, 100)
-            },
-            "clicks": random.randint(100, 5000),
-            "ctr": round(random.uniform(0.5, 5.0), 2),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    async def get_ad_metrics(self, campaign_id: str) -> Dict[str, Any]:
-        """Simulate fetching ad campaign metrics"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
-        
-        spend = random.uniform(50, 500)
-        clicks = random.randint(100, 2000)
-        
-        return {
-            "campaign_id": campaign_id,
-            "impressions": random.randint(5000, 100000),
-            "clicks": clicks,
-            "spend": round(spend, 2),
-            "cpc": round(spend / clicks if clicks > 0 else 0, 2),
-            "conversions": random.randint(10, 200),
-            "conversion_rate": round(random.uniform(1.0, 10.0), 2),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock metrics for development
+                days_since_publish = (datetime.utcnow() - published_at).days if published_at else 1
+                base_impressions = random.randint(1000, 10000) * days_since_publish
+                
+                return {
+                    "asset_id": asset_id,
+                    "impressions": base_impressions,
+                    "clicks": int(base_impressions * random.uniform(0.01, 0.05)),
+                    "engagement_rate": random.uniform(0.02, 0.08),
+                    "conversion_rate": random.uniform(0.005, 0.03),
+                    "cpa": random.uniform(5.0, 25.0),
+                    "reactions": int(base_impressions * random.uniform(0.005, 0.02)),
+                    "shares": int(base_impressions * random.uniform(0.001, 0.005)),
+                    "comments": int(base_impressions * random.uniform(0.0005, 0.002))
+                }
+            else:
+                # Real API call
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.api_endpoint}/insights/{asset_id}",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}"
+                        },
+                        params={
+                            "metrics": "impressions,clicks,engagement_rate,conversions",
+                            "period": "lifetime"
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # Process and return metrics
+                    return {
+                        "asset_id": asset_id,
+                        "impressions": data.get("impressions", 0),
+                        "clicks": data.get("clicks", 0),
+                        "engagement_rate": data.get("engagement_rate", 0),
+                        "conversion_rate": data.get("conversion_rate", 0),
+                        "cpa": data.get("cost_per_action", 0)
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error getting Facebook metrics: {str(e)}")
+            raise

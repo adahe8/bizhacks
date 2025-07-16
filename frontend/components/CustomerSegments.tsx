@@ -1,173 +1,164 @@
-// components/CustomerSegments.tsx
-import { useState } from 'react';
-import { FaUsers, FaChartPie, FaArrowRight, FaTag } from 'react-icons/fa';
+import { CustomerSegment } from '@/lib/types';
 
-interface Segment {
-  id: number;
-  name: string;
-  description: string;
-  size_estimate: number;
+interface Props {
+  segments: CustomerSegment[];
 }
 
-interface CustomerSegmentsProps {
-  segments: Segment[];
-}
-
-export default function CustomerSegments({ segments }: CustomerSegmentsProps) {
-  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
-  
-  const totalCustomers = segments.reduce((sum, seg) => sum + seg.size_estimate, 0);
-  
+export default function CustomerSegments({ segments }: Props) {
   const getSegmentColor = (index: number) => {
     const colors = [
-      'bg-blue-500',
-      'bg-green-500',
-      'bg-purple-500',
-      'bg-yellow-500',
-      'bg-pink-500',
-      'bg-indigo-500'
+      'bg-blue-100 text-blue-800',
+      'bg-green-100 text-green-800',
+      'bg-purple-100 text-purple-800',
     ];
     return colors[index % colors.length];
   };
-  
-  const getSegmentPercentage = (size: number) => {
-    return totalCustomers > 0 ? ((size / totalCustomers) * 100).toFixed(1) : '0';
+
+  const renderChannelBar = (distribution: any) => {
+    if (!distribution) return null;
+    
+    const channels = [
+      { name: 'Email', key: 'email', color: 'bg-blue-500' },
+      { name: 'Facebook', key: 'facebook', color: 'bg-indigo-500' },
+      { name: 'Google', key: 'google_seo', color: 'bg-green-500' }
+    ];
+    
+    return (
+      <div className="mt-3">
+        <p className="text-xs text-gray-500 mb-1">Channel Distribution</p>
+        <div className="flex h-6 rounded overflow-hidden">
+          {channels.map((channel) => {
+            const percentage = distribution[channel.key] || 0;
+            if (percentage === 0) return null;
+            
+            return (
+              <div
+                key={channel.key}
+                className={`${channel.color} flex items-center justify-center text-white text-xs font-medium`}
+                style={{ width: `${percentage}%` }}
+                title={`${channel.name}: ${percentage}%`}
+              >
+                {percentage > 15 && `${percentage}%`}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-between mt-1">
+          {channels.map((channel) => (
+            <span key={channel.key} className="text-xs text-gray-500">
+              {channel.name}: {distribution[channel.key] || 0}%
+            </span>
+          ))}
+        </div>
+      </div>
+    );
   };
 
+  const renderPurchaseInfo = (criteria: any) => {
+    if (!criteria) return null;
+    
+    const avgPurchases = criteria.avg_purchases || 0;
+    const purchaseRange = criteria.purchase_range || 'N/A';
+    const highPurchasersPct = criteria.high_purchasers_pct || 0;
+    const noPurchasePct = criteria.no_purchase_pct || 0;
+    
+    return (
+      <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+        <p className="font-medium text-gray-700">Purchase Patterns:</p>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <div>
+            <span className="text-gray-500">Avg Purchases:</span>
+            <span className="ml-1 font-medium">{avgPurchases.toFixed(1)}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Range:</span>
+            <span className="ml-1 font-medium">{purchaseRange}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Frequent Buyers:</span>
+            <span className="ml-1 font-medium text-green-600">{highPurchasersPct}%</span>
+          </div>
+          <div>
+            <span className="text-gray-500">No Purchases:</span>
+            <span className="ml-1 font-medium text-red-600">{noPurchasePct}%</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (segments.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="text-center py-8">
+          <p className="text-gray-500">No customer segments defined yet.</p>
+          <p className="text-sm text-gray-400 mt-2">
+            AI will generate up to 3 segments based on your user data.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow">
-      <div className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Segments List */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <FaTag className="mr-2 text-indigo-600" />
-              Customer Segments
-            </h3>
-            <div className="space-y-3">
-              {segments.map((segment, index) => (
-                <div
-                  key={segment.id}
-                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                    selectedSegment === segment.id
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  onClick={() => setSelectedSegment(segment.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className={`w-4 h-4 rounded-full ${getSegmentColor(index)} mr-3`} />
-                      <div>
-                        <h4 className="font-medium text-gray-900">{segment.name}</h4>
-                        <p className="text-sm text-gray-600 mt-1">{segment.description}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-semibold text-gray-900">
-                        {segment.size_estimate.toLocaleString()}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {getSegmentPercentage(segment.size_estimate)}%
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {segments.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <FaUsers className="mx-auto mb-3 text-4xl text-gray-300" />
-                <p>No segments created yet</p>
-                <p className="text-sm mt-1">Run customer segmentation to get started</p>
-              </div>
-            )}
-          </div>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="space-y-4">
+        {segments.slice(0, 3).map((segment, index) => {
+          const channelDist = segment.channel_distribution ? 
+            (typeof segment.channel_distribution === 'string' ? 
+              JSON.parse(segment.channel_distribution) : 
+              segment.channel_distribution) : null;
           
-          {/* Visual Representation */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <FaChartPie className="mr-2 text-indigo-600" />
-              Distribution Overview
-            </h3>
-            
-            {segments.length > 0 ? (
-              <div className="space-y-4">
-                {/* Pie Chart Placeholder */}
-                <div className="relative h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="relative w-48 h-48 mx-auto">
-                      {/* Simple CSS Pie Chart */}
-                      <svg viewBox="0 0 32 32" className="w-full h-full transform -rotate-90">
-                        {(() => {
-                          let cumulativePercentage = 0;
-                          return segments.map((segment, index) => {
-                            const percentage = (segment.size_estimate / totalCustomers) * 100;
-                            const strokeDasharray = `${percentage} ${100 - percentage}`;
-                            const strokeDashoffset = -cumulativePercentage;
-                            
-                            cumulativePercentage += percentage;
-                            
-                            // Map color class to hex color
-                            const colorMap: { [key: string]: string } = {
-                              'bg-blue-500': '#3B82F6',
-                              'bg-green-500': '#10B981',
-                              'bg-purple-500': '#8B5CF6',
-                              'bg-yellow-500': '#F59E0B',
-                              'bg-pink-500': '#EC4899',
-                              'bg-indigo-500': '#6366F1'
-                            };
-                            
-                            const color = colorMap[getSegmentColor(index)] || '#6366F1';
-                            
-                            return (
-                              <circle
-                                key={segment.id}
-                                r="16"
-                                cx="16"
-                                cy="16"
-                                fill="none"
-                                stroke={color}
-                                strokeWidth="32"
-                                strokeDasharray={strokeDasharray}
-                                strokeDashoffset={strokeDashoffset}
-                                className="transition-all duration-300"
-                              />
-                            );
-                          });
-                        })()}
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div>
-                          <p className="text-3xl font-bold text-gray-900">
-                            {totalCustomers.toLocaleString()}
-                          </p>
-                          <p className="text-sm text-gray-600">Total Customers</p>
-                        </div>
-                      </div>
-                    </div>
+          const criteria = segment.criteria ? 
+            (typeof segment.criteria === 'string' ? 
+              JSON.parse(segment.criteria) : 
+              segment.criteria) : null;
+          
+          return (
+            <div
+              key={segment.id}
+              className="border-l-4 border-primary-500 pl-4 py-2"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900">{segment.name}</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {segment.description}
+                  </p>
+                </div>
+                <div className="ml-4">
+                  <span className={`px-3 py-1 text-sm font-medium rounded-full ${getSegmentColor(index)}`}>
+                    {segment.size}%
+                  </span>
+                </div>
+              </div>
+              
+              {criteria && (
+                <>
+                  <div className="mt-2 text-xs text-gray-500">
+                    <p>Age: {criteria.age_range || criteria.avg_age || 'Various'}</p>
+                    {criteria.top_locations && (
+                      <p>Locations: {criteria.top_locations.slice(0, 2).join(', ')}</p>
+                    )}
                   </div>
-                </div>
-                
-                {/* Actions */}
-                <div className="flex justify-center">
-                  <button
-                    onClick={() => window.location.href = '/create'}
-                    disabled={segments.length === 0}
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Create Campaigns for Segments
-                    <FaArrowRight className="ml-2" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-                <p className="text-gray-500">No data to display</p>
-              </div>
-            )}
-          </div>
+                  {renderPurchaseInfo(criteria)}
+                </>
+              )}
+              
+              {channelDist && renderChannelBar(channelDist)}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-6 pt-4 border-t">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            Total Segments: {Math.min(segments.length, 3)}
+          </p>
+          <p className="text-sm text-gray-500">
+            Coverage: {segments.slice(0, 3).reduce((sum, seg) => sum + (seg.size || 0), 0).toFixed(1)}%
+          </p>
         </div>
       </div>
     </div>

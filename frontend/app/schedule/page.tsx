@@ -1,44 +1,16 @@
-// app/schedule/page.tsx
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { toast } from 'react-hot-toast';
-import axios from 'axios';
-import { useRouter } from 'next/navigation';
-import { format, addDays, startOfWeek, endOfWeek } from 'date-fns';
-import { 
-  FaArrowLeft, 
-  FaCalendarAlt,
-  FaFacebook,
-  FaEnvelope,
-  FaGoogle,
-  FaClock
-} from 'react-icons/fa';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-interface ScheduledCampaign {
-  campaign_id: number;
-  campaign_name: string;
-  next_run: string;
-  frequency_days: number;
-  channel: string;
-}
-
-interface Campaign {
-  id: number;
-  name: string;
-  channel: string;
-  status: string;
-  frequency_days: number;
-}
+import { useEffect, useState } from "react";
+import { scheduleApi, campaignApi } from "@/lib/api";
+import ScheduleTimeline from "@/components/ScheduleTimeline";
+import { Schedule, Campaign } from "@/lib/types";
+import { format } from "date-fns";
 
 export default function SchedulePage() {
-  const router = useRouter();
-  const [schedules, setSchedules] = useState<ScheduledCampaign[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedWeek, setSelectedWeek] = useState(new Date());
+  const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
 
   useEffect(() => {
     loadData();
@@ -46,217 +18,217 @@ export default function SchedulePage() {
 
   const loadData = async () => {
     try {
-      const [schedulesRes, campaignsRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/schedules/`),
-        axios.get(`${API_BASE}/api/campaigns/`)
+      const [schedulesData, campaignsData] = await Promise.all([
+        scheduleApi.list(),
+        campaignApi.list(),
       ]);
-
-      setSchedules(schedulesRes.data);
-      setCampaigns(campaignsRes.data);
+      setSchedules(schedulesData);
+      setCampaigns(campaignsData);
     } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('Failed to load schedules');
+      console.error("Error loading schedule data:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getChannelIcon = (channel: string) => {
-    switch(channel) {
-      case 'facebook':
-        return <FaFacebook className="text-blue-600" />;
-      case 'email':
-        return <FaEnvelope className="text-green-600" />;
-      case 'google_ads':
-        return <FaGoogle className="text-red-600" />;
-      default:
-        return null;
+  const handleCreateSchedule = async (
+    campaignId: string,
+    scheduledTime: Date
+  ) => {
+    try {
+      await scheduleApi.create({
+        campaign_id: campaignId,
+        scheduled_time: scheduledTime.toISOString(),
+        recurring: false,
+      });
+      await loadData();
+    } catch (error) {
+      console.error("Error creating schedule:", error);
     }
   };
 
-  const getChannelColor = (channel: string) => {
-    switch(channel) {
-      case 'facebook':
-        return 'bg-blue-100 border-blue-300';
-      case 'email':
-        return 'bg-green-100 border-green-300';
-      case 'google_ads':
-        return 'bg-red-100 border-red-300';
-      default:
-        return 'bg-gray-100 border-gray-300';
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (confirm("Are you sure you want to delete this schedule?")) {
+      try {
+        await scheduleApi.delete(scheduleId);
+        await loadData();
+      } catch (error) {
+        console.error("Error deleting schedule:", error);
+      }
     }
   };
 
-  const getWeekDays = () => {
-    const start = startOfWeek(selectedWeek);
-    const days = [];
-    
-    for (let i = 0; i < 7; i++) {
-      days.push(addDays(start, i));
-    }
-    
-    return days;
-  };
-
-  const getCampaignsForDay = (date: Date) => {
-    return schedules.filter(schedule => {
-      const scheduleDate = new Date(schedule.next_run);
-      return format(scheduleDate, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
-    });
-  };
-
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    setSelectedWeek(prev => addDays(prev, direction === 'next' ? 7 : -7));
-  };
+  const filteredSchedules = schedules.filter((schedule) => {
+    if (filter === "all") return true;
+    if (filter === "pending") return schedule.status === "pending";
+    if (filter === "completed")
+      return schedule.status === "completed" || schedule.status === "failed";
+    return true;
+  });
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="mr-4 p-2 text-gray-600 hover:text-gray-900"
-              >
-                <FaArrowLeft />
-              </button>
-              <h1 className="text-2xl font-bold text-gray-900">Campaign Schedule</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigateWeek('prev')}
-                className="p-2 text-gray-600 hover:text-gray-900"
-              >
-                ←
-              </button>
-              <span className="text-lg font-medium">
-                {format(startOfWeek(selectedWeek), 'MMM d')} - {format(endOfWeek(selectedWeek), 'MMM d, yyyy')}
-              </span>
-              <button
-                onClick={() => navigateWeek('next')}
-                className="p-2 text-gray-600 hover:text-gray-900"
-              >
-                →
-              </button>
-              <button
-                onClick={() => setSelectedWeek(new Date())}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-              >
-                Today
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Campaign Schedule</h1>
+        <p className="text-gray-600 mt-2">
+          Manage and monitor your campaign execution timeline
+        </p>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Calendar View */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="grid grid-cols-7 gap-px bg-gray-200">
-            {getWeekDays().map((day, index) => {
-              const daySchedules = getCampaignsForDay(day);
-              const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
-              
-              return (
-                <div
-                  key={index}
-                  className={`bg-white p-4 min-h-[200px] ${
-                    isToday ? 'bg-indigo-50' : ''
-                  }`}
-                >
-                  <div className="mb-3">
-                    <div className="text-sm font-medium text-gray-900">
-                      {format(day, 'EEE')}
-                    </div>
-                    <div className={`text-2xl font-bold ${
-                      isToday ? 'text-indigo-600' : 'text-gray-900'
-                    }`}>
-                      {format(day, 'd')}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {daySchedules.map((schedule, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-2 rounded border text-xs ${getChannelColor(schedule.channel)}`}
+      {/* Filter Tabs */}
+      <div className="mb-6 border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          {(["all", "pending", "completed"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setFilter(tab)}
+              className={`
+                py-2 px-1 border-b-2 font-medium text-sm capitalize
+                ${
+                  filter === tab
+                    ? "border-primary-500 text-primary-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }
+              `}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Timeline View */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Schedule Timeline
+        </h2>
+        <ScheduleTimeline
+          schedules={filteredSchedules.filter((s) => s.status === "pending")}
+        />
+      </div>
+
+      {/* Schedule List */}
+      <div className="card">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          All Schedules
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Campaign
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Scheduled Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredSchedules.map((schedule) => {
+                const campaign = campaigns.find(
+                  (c) => c.id === schedule.campaign_id
+                );
+                return (
+                  <tr key={schedule.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {campaign?.name || "Unknown Campaign"}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {campaign?.channel}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {format(new Date(schedule.scheduled_time), "PPpp")}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`
+                        px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                        ${
+                          schedule.status === "pending"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : ""
+                        }
+                        ${
+                          schedule.status === "executing"
+                            ? "bg-blue-100 text-blue-800"
+                            : ""
+                        }
+                        ${
+                          schedule.status === "completed"
+                            ? "bg-green-100 text-green-800"
+                            : ""
+                        }
+                        ${
+                          schedule.status === "failed"
+                            ? "bg-red-100 text-red-800"
+                            : ""
+                        }
+                      `}
                       >
-                        <div className="flex items-center mb-1">
-                          {getChannelIcon(schedule.channel)}
-                          <span className="ml-1 font-medium truncate">
-                            {schedule.campaign_name}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-gray-600">
-                          <FaClock className="mr-1" />
-                          {format(new Date(schedule.next_run), 'h:mm a')}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                        {schedule.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {schedule.status === "pending" && (
+                        <button
+                          onClick={() => handleDeleteSchedule(schedule.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+      </div>
 
-        {/* Upcoming Campaigns List */}
-        <div className="mt-8 bg-white rounded-lg shadow">
-          <div className="p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Upcoming Campaign Executions
-            </h2>
-            
-            {schedules.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No scheduled campaigns. Start campaigns from the dashboard to see them here.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {schedules
-                  .sort((a, b) => new Date(a.next_run).getTime() - new Date(b.next_run).getTime())
-                  .slice(0, 10)
-                  .map((schedule, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex items-center">
-                        {getChannelIcon(schedule.channel)}
-                        <div className="ml-3">
-                          <h4 className="font-medium text-gray-900">
-                            {schedule.campaign_name}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            Every {schedule.frequency_days} days
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900">
-                          {format(new Date(schedule.next_run), 'MMM d, yyyy')}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {format(new Date(schedule.next_run), 'h:mm a')}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
+      {/* Quick Schedule */}
+      <div className="mt-8 card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          Quick Schedule
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <select className="input-field">
+            <option value="">Select a campaign</option>
+            {campaigns
+              .filter((c) => c.status === "active")
+              .map((campaign) => (
+                <option key={campaign.id} value={campaign.id}>
+                  {campaign.name}
+                </option>
+              ))}
+          </select>
+          <input
+            type="datetime-local"
+            className="input-field"
+            min={new Date().toISOString().slice(0, 16)}
+          />
         </div>
-      </main>
+        <button className="btn-primary mt-4">Schedule Campaign</button>
+      </div>
     </div>
   );
 }

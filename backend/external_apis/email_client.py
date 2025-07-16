@@ -1,68 +1,109 @@
 # backend/external_apis/email_client.py
-import random
-import asyncio
+import httpx
+from typing import Dict, Any
 from datetime import datetime
-from typing import Dict, Any, List
-import uuid
+import random
+import logging
+
+from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class EmailClient:
-    """Mock Email Service Provider API client"""
+    """Client for Email Service API (Mock Implementation)"""
     
     def __init__(self):
-        self.api_key = "mock_email_api_key"
-        self.from_email = "marketing@company.com"
+        self.api_endpoint = settings.EMAIL_SERVICE_API_ENDPOINT
+        self.api_key = settings.EMAIL_SERVICE_API_KEY
     
-    async def send_campaign(self, content_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Simulate sending an email campaign"""
-        await asyncio.sleep(random.uniform(1.0, 2.0))
+    async def publish_content(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """Send email campaign"""
         
-        campaign_id = f"email_{uuid.uuid4().hex[:12]}"
-        recipient_count = content_data.get("recipient_count", random.randint(1000, 10000))
-        
-        return {
-            "id": campaign_id,
-            "status": "sent",
-            "sent_at": datetime.utcnow().isoformat(),
-            "subject": content_data.get("subject", ""),
-            "from": self.from_email,
-            "recipient_count": recipient_count,
-            "scheduled": False
-        }
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock response for development
+                return {
+                    "campaign_id": f"email_{datetime.utcnow().timestamp()}",
+                    "status": "sent",
+                    "recipients": random.randint(1000, 5000),
+                    "scheduled_time": content.get("send_time"),
+                    "sent_at": datetime.utcnow().isoformat()
+                }
+            else:
+                # Real API call (e.g., SendGrid, Mailchimp)
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.api_endpoint}/campaigns",
+                        json={
+                            "subject": content.get("subject_line", ""),
+                            "preview_text": content.get("preview_text", ""),
+                            "html_content": content.get("body_html", ""),
+                            "recipient_list": content.get("recipients", []),
+                            "send_time": content.get("send_time")
+                        },
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        }
+                    )
+                    response.raise_for_status()
+                    return response.json()
+                    
+        except Exception as e:
+            logger.error(f"Error sending email campaign: {str(e)}")
+            raise
     
-    async def get_campaign_metrics(self, campaign_id: str) -> Dict[str, Any]:
-        """Simulate fetching email campaign metrics"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
+    async def get_metrics(self, asset_id: str, published_at: datetime = None) -> Dict[str, Any]:
+        """Get email campaign metrics"""
         
-        sent = random.randint(5000, 20000)
-        delivered = int(sent * random.uniform(0.95, 0.99))
-        opened = int(delivered * random.uniform(0.15, 0.35))
-        clicked = int(opened * random.uniform(0.10, 0.25))
-        
-        return {
-            "campaign_id": campaign_id,
-            "sent": sent,
-            "delivered": delivered,
-            "bounced": sent - delivered,
-            "opened": opened,
-            "clicked": clicked,
-            "unsubscribed": random.randint(5, 50),
-            "complained": random.randint(0, 5),
-            "open_rate": round((opened / delivered) * 100, 2) if delivered > 0 else 0,
-            "click_rate": round((clicked / delivered) * 100, 2) if delivered > 0 else 0,
-            "ctr": round((clicked / opened) * 100, 2) if opened > 0 else 0,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    async def get_subscriber_segments(self) -> List[Dict[str, Any]]:
-        """Simulate fetching email subscriber segments"""
-        await asyncio.sleep(random.uniform(0.3, 0.8))
-        
-        return [
-            {
-                "id": f"seg_{i}",
-                "name": f"Segment {i}",
-                "subscriber_count": random.randint(1000, 10000),
-                "created_at": datetime.utcnow().isoformat()
-            }
-            for i in range(1, 6)
-        ]
+        try:
+            if self.api_endpoint.startswith("http://localhost"):
+                # Mock metrics for development
+                days_since_send = (datetime.utcnow() - published_at).days if published_at else 1
+                recipients = random.randint(1000, 5000)
+                
+                open_rate = random.uniform(0.15, 0.35)
+                click_rate = random.uniform(0.02, 0.08)
+                
+                opens = int(recipients * open_rate)
+                clicks = int(opens * click_rate)
+                
+                return {
+                    "asset_id": asset_id,
+                    "impressions": recipients,  # Total recipients
+                    "clicks": clicks,
+                    "engagement_rate": open_rate,  # Open rate for emails
+                    "conversion_rate": random.uniform(0.01, 0.05),
+                    "cpa": random.uniform(10.0, 50.0),
+                    "opens": opens,
+                    "bounces": int(recipients * random.uniform(0.01, 0.03)),
+                    "unsubscribes": int(recipients * random.uniform(0.001, 0.005))
+                }
+            else:
+                # Real API call
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.api_endpoint}/campaigns/{asset_id}/stats",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}"
+                        }
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # Process and return metrics
+                    return {
+                        "asset_id": asset_id,
+                        "impressions": data.get("recipients", 0),
+                        "clicks": data.get("clicks", 0),
+                        "engagement_rate": data.get("open_rate", 0),
+                        "conversion_rate": data.get("conversion_rate", 0),
+                        "cpa": data.get("cost_per_acquisition", 0),
+                        "opens": data.get("opens", 0),
+                        "bounces": data.get("bounces", 0),
+                        "unsubscribes": data.get("unsubscribes", 0)
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error getting email metrics: {str(e)}")
+            raise

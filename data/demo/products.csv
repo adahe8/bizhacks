@@ -1,0 +1,13 @@
+id,company_id,product_name,description,launch_date,target_skin_type
+1f4f6c05-553e-4276-b0b5-6c26cbd7b9b0,c857386b-e805-4a98-ab00-e6aa029444da,Glow Drops,Enhances radiance with natural shimmer.,2025-06-10,All
+43720375-f042-4e5d-95f5-1cb34391645a,99eb676b-bbbb-4c46-b874-184179e9b581,Soothing Face Mask,Calms irritated and sensitive skin.,2025-04-22,Sensitive
+46e1133a-229f-4c95-a77e-2df5c61c0c2f,b80ed0d3-98a9-4b31-b3c0-409cdf7ef4a3,AHA Toner,Exfoliates and smooths texture.,2025-06-15,Combination
+474d419e-ebaf-48fa-8ea9-b0b9b8cb8bae,c5d00be4-9e36-4dff-b20c-3de73c248f79,Gentle Exfoliator,Smoothens skin without harsh abrasion.,2025-06-09,Normal
+53149c00-c49b-435d-89c2-aab51ff14d55,2667ceb5-4998-4859-8ccc-bc86c937da4e,Hydrating Gel Cleanser,A refreshing cleanser for oily/combination skin types.,2025-06-17,Oily
+6521c269-5566-4a71-86b5-cf87f16390c9,99eb676b-bbbb-4c46-b874-184179e9b581,Vitamin C Serum,Brightens and evens skin tone.,2025-06-18,All
+71bda02c-1c30-4c7c-aa82-103dd244b9d0,2667ceb5-4998-4859-8ccc-bc86c937da4e,Daily Moisturizer,Lightweight hydration for everyday use.,2025-06-02,Dry
+86e30a06-1eee-466f-9d78-acb091d64d9b,dd4b84f8-5023-4212-9c17-cab8f0754c6b,SPF 50 Sunscreen,Broad-spectrum protection for daily wear.,2025-07-07,All
+8764c545-7bfc-4786-8015-8804b6e0bd84,dd4b84f8-5023-4212-9c17-cab8f0754c6b,Night Repair Cream,Rejuvenates skin overnight.,2025-06-13,Dry
+eb79f806-9675-4e02-8cc2-64d3226e4aec,b80ed0d3-98a9-4b31-b3c0-409cdf7ef4a3,Hydra Boost Serum,Locks in moisture with hyaluronic acid.,2025-06-07,Dry
+ebfec0d4-04aa-433c-9e54-d5fb0307b924,c5d00be4-9e36-4dff-b20c-3de73c248f79,Oil Control Primer,Mattifies and preps for makeup.,2025-06-09,Oily
+f6e2bc76-d9b1-429d-9824-ef2a4dcf90aa,c857386b-e805-4a98-ab00-e6aa029444da,Anti-Acne Spot Gel,Targets breakouts with salicylic acid.,2025-04-17,Oily

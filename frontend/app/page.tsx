@@ -30,6 +30,7 @@ export default function Home() {
   const [isExistingSetup, setIsExistingSetup] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [generatedSegments, setGeneratedSegments] = useState<any[]>([]);
+  const [completedSetup, setCompletedSetup] = useState<any>(null); // ✅ Store completed setup
   const [setupData, setSetupData] = useState({
     company_id: '',
     product_id: '',
@@ -94,7 +95,14 @@ export default function Home() {
   const completeSetup = async () => {
     try {
       // Initialize setup
-      await setupApi.initialize(setupData);
+      const setupResponse = await setupApi.initialize(setupData);
+      
+      // ✅ Store the completed setup for passing to AICampaignGenerationModal
+      setCompletedSetup({
+        ...setupData,
+        id: setupResponse.id,
+        is_active: true
+      });
       
       // Show segment generation loading
       setCurrentStep('generating-segments');
@@ -135,6 +143,7 @@ export default function Home() {
     setShowWelcome(false);
     setCurrentStep('firm');
     setGeneratedSegments([]);
+    setCompletedSetup(null);
     setSetupData({
       company_id: '',
       product_id: '',
@@ -272,7 +281,7 @@ export default function Home() {
             onComplete={(data) => handleStepComplete({
               monthly_budget: data.budget,
               rebalancing_frequency: data.frequency,
-              campaign_count: data.campaign_count,
+              campaign_count: data.campaign_count, // ✅ Ensure campaign_count is saved
             })}
           />
         )}
@@ -283,10 +292,11 @@ export default function Home() {
           />
         )}
         
-        {currentStep === 'ai-campaigns' && (
+        {currentStep === 'ai-campaigns' && completedSetup && ( // ✅ Pass completedSetup
           <AICampaignGenerationModal
             segments={generatedSegments}
             channels={['facebook', 'email', 'google_seo']}
+            setup={completedSetup} // ✅ Pass setup as prop
             onComplete={handleCampaignsGenerated}
           />
         )}

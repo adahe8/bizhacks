@@ -32,6 +32,72 @@ class ScheduleUpdate(BaseModel):
     scheduled_time: Optional[datetime] = None
     status: Optional[str] = None
 
+@router.get("/upcoming", response_model=List[ScheduleResponse])
+async def get_upcoming_schedules(
+    session: Session = Depends(get_session),
+    days: Optional[int] = Query(7, description="Number of days to look ahead")
+):
+    """Get upcoming schedules for the next N days"""
+    from datetime import timedelta
+    
+    if days is None:
+        days = 7
+    
+    now = datetime.utcnow()
+    end_date = now + timedelta(days=days)
+    
+    schedules = session.exec(
+        select(Schedule)
+        .where(Schedule.scheduled_time >= now)
+        .where(Schedule.scheduled_time <= end_date)
+        .where(Schedule.status == "pending")
+        .order_by(Schedule.scheduled_time)
+    ).all()
+    
+    return schedules
+
+
+@router.get("/calendar", response_model=List[Dict[str, Any]])
+async def get_calendar_schedules(
+    session: Session = Depends(get_session),
+    year: int = Query(..., description="Year"),
+    month: int = Query(..., description="Month (1-12)")
+):
+    """Get schedules for calendar view"""
+    from datetime import timedelta
+    from calendar import monthrange
+    
+    # Get the first and last day of the month
+    _, last_day = monthrange(year, month)
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year, month, last_day, 23, 59, 59)
+    
+    # Get all schedules for the month
+    schedules = session.exec(
+        select(Schedule)
+        .where(Schedule.scheduled_time >= start_date)
+        .where(Schedule.scheduled_time <= end_date)
+        .where(Schedule.status.in_(["pending", "executing"]))
+        .order_by(Schedule.scheduled_time)
+    ).all()
+    
+    # Group by day
+    calendar_data = []
+    for schedule in schedules:
+        campaign = schedule.campaign
+        if campaign:
+            calendar_data.append({
+                "date": schedule.scheduled_time.date().isoformat(),
+                "time": schedule.scheduled_time.strftime("%H:%M"),
+                "campaign_id": str(schedule.campaign_id),
+                "campaign_name": campaign.name,
+                "channel": campaign.channel,
+                "frequency": campaign.frequency,
+                "status": schedule.status
+            })
+    
+    return calendar_data
+
 @router.get("/", response_model=List[ScheduleResponse])
 async def list_schedules(
     session: Session = Depends(get_session),
@@ -154,69 +220,3 @@ async def delete_schedule(
     session.commit()
     
     return {"message": "Schedule deleted successfully"}
-
-@router.get("/upcoming", response_model=List[ScheduleResponse])
-async def get_upcoming_schedules(
-    session: Session = Depends(get_session),
-    days: Optional[int] = Query(7, description="Number of days to look ahead")
-):
-    """Get upcoming schedules for the next N days"""
-    from datetime import timedelta
-    
-    if days is None:
-        days = 7
-    
-    now = datetime.utcnow()
-    end_date = now + timedelta(days=days)
-    
-    schedules = session.exec(
-        select(Schedule)
-        .where(Schedule.scheduled_time >= now)
-        .where(Schedule.scheduled_time <= end_date)
-        .where(Schedule.status == "pending")
-        .order_by(Schedule.scheduled_time)
-    ).all()
-    
-    return schedules
-
-
-@router.get("/calendar", response_model=List[Dict[str, Any]])
-async def get_calendar_schedules(
-    session: Session = Depends(get_session),
-    year: int = Query(..., description="Year"),
-    month: int = Query(..., description="Month (1-12)")
-):
-    """Get schedules for calendar view"""
-    from datetime import timedelta
-    from calendar import monthrange
-    
-    # Get the first and last day of the month
-    _, last_day = monthrange(year, month)
-    start_date = datetime(year, month, 1)
-    end_date = datetime(year, month, last_day, 23, 59, 59)
-    
-    # Get all schedules for the month
-    schedules = session.exec(
-        select(Schedule)
-        .where(Schedule.scheduled_time >= start_date)
-        .where(Schedule.scheduled_time <= end_date)
-        .where(Schedule.status.in_(["pending", "executing"]))
-        .order_by(Schedule.scheduled_time)
-    ).all()
-    
-    # Group by day
-    calendar_data = []
-    for schedule in schedules:
-        campaign = schedule.campaign
-        if campaign:
-            calendar_data.append({
-                "date": schedule.scheduled_time.date().isoformat(),
-                "time": schedule.scheduled_time.strftime("%H:%M"),
-                "campaign_id": str(schedule.campaign_id),
-                "campaign_name": campaign.name,
-                "channel": campaign.channel,
-                "frequency": campaign.frequency,
-                "status": schedule.status
-            })
-    
-    return calendar_data

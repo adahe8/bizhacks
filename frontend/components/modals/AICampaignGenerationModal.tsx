@@ -1,57 +1,39 @@
 // frontend/components/modals/AICampaignGenerationModal.tsx
 
 import { useState, useEffect } from 'react';
-import { agentApi, campaignApi, setupApi } from '@/lib/api';
+import { agentApi, campaignApi } from '@/lib/api';
 import { CampaignIdea, SetupConfig } from '@/lib/types';
 
 interface Props {
   segments: any[];
   channels: string[];
+  setup: SetupConfig; // ✅ Accept setup as prop instead of loading it
   onComplete: () => void;
 }
 
-export default function AICampaignGenerationModal({ segments, channels, onComplete }: Props) {
-  const [isGenerating, setIsGenerating] = useState(true);
+export default function AICampaignGenerationModal({ segments, channels, setup, onComplete }: Props) {
+  const [isGenerating, setIsGenerating] = useState(false);
   const [campaignIdeas, setCampaignIdeas] = useState<CampaignIdea[]>([]);
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<number>>(new Set());
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [setup, setSetup] = useState<SetupConfig | null>(null);
 
   useEffect(() => {
-    loadSetupAndGenerateIdeas();
-  }, []);
-
-  const loadSetupAndGenerateIdeas = async () => {
-    try {
-      // First fetch the current setup to get product_id
-      const currentSetup = await setupApi.getCurrent();
-      if (!currentSetup) {
-        setError('No active setup found. Please complete the setup wizard.');
-        setIsGenerating(false);
-        return;
-      }
-      setSetup(currentSetup);
-      
-      // Then generate campaign ideas
-      await generateCampaignIdeas();
-    } catch (error) {
-      console.error('Error loading setup:', error);
-      setError('Failed to load setup configuration.');
-      setIsGenerating(false);
+    // Only generate ideas when setup is fully loaded with product_id
+    if (setup && setup.product_id) {
+      generateCampaignIdeas();
     }
-  };
+  }, [setup]); // Add setup as dependency
 
   const generateCampaignIdeas = async () => {
+    // Don't generate if setup is not ready
+    if (!setup || !setup.product_id) {
+      return;
+    }
+    
     try {
       setIsGenerating(true);
       setError(null);
-      
-      if (!setup) {
-        setError('Setup not loaded. Please try again.');
-        setIsGenerating(false);
-        return;
-      }
       
       const segmentNames = segments.map(s => s.name);
       const ideas = await agentApi.generateCampaignIdeas({
@@ -59,9 +41,12 @@ export default function AICampaignGenerationModal({ segments, channels, onComple
         channels: channels
       });
       
-      setCampaignIdeas(ideas);
+      // ✅ Limit ideas to the campaign_count from setup
+      const limitedIdeas = ideas.slice(0, setup.campaign_count || 5);
+      
+      setCampaignIdeas(limitedIdeas);
       // Pre-select all campaigns by default
-      setSelectedCampaigns(new Set(ideas.map((_, index) => index)));
+      setSelectedCampaigns(new Set(limitedIdeas.map((_, index) => index)));
     } catch (error) {
       console.error('Error generating campaign ideas:', error);
       setError('Failed to generate campaign ideas. Please try again.');
@@ -139,13 +124,26 @@ export default function AICampaignGenerationModal({ segments, channels, onComple
     }
   };
 
+  // Show loading if setup is not ready
+  if (!setup || !setup.product_id) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg p-8 max-w-md w-full text-center shadow-lg">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Loading Setup...</h2>
+          <p className="text-gray-600">Preparing to generate campaign ideas</p>
+        </div>
+      </div>
+    );
+  }
+
   if (isGenerating) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white rounded-lg p-8 max-w-md w-full text-center shadow-lg">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Creating Campaign Ideas...</h2>
-          <p className="text-gray-600">Our AI is generating personalized campaigns for your segments</p>
+          <p className="text-gray-600">Our AI is generating {setup.campaign_count || 5} personalized campaigns for your segments</p>
         </div>
       </div>
     );
@@ -159,7 +157,7 @@ export default function AICampaignGenerationModal({ segments, channels, onComple
           <div className="p-6 border-b">
             <h2 className="text-2xl font-bold text-gray-900">AI-Generated Campaign Ideas</h2>
             <p className="text-gray-600 mt-2">
-              Select the campaigns you'd like to create. You can choose multiple campaigns across different channels.
+              Select the campaigns you'd like to create. We've generated {campaignIdeas.length} ideas based on your setup.
             </p>
             {error && (
               <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
@@ -236,6 +234,10 @@ export default function AICampaignGenerationModal({ segments, channels, onComple
                       <span className="text-gray-500">Frequency:</span>
                       <span className="font-medium capitalize">{campaign.frequency}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Budget:</span>
+                      <span className="font-medium">${campaign.suggested_budget.toFixed(0)}/mo</span>
+                    </div>
                     {campaign.objectives && (
                       <div className="pt-2 border-t">
                         <p className="text-gray-700 italic">
@@ -262,13 +264,13 @@ export default function AICampaignGenerationModal({ segments, channels, onComple
               <button
                 onClick={() => generateCampaignIdeas()}
                 className="btn-outline"
-                disabled={isGenerating || isCreating || !setup}
+                disabled={isGenerating || isCreating}
               >
                 Regenerate Ideas
               </button>
               <button
                 onClick={createSelectedCampaigns}
-                disabled={selectedCampaigns.size === 0 || isCreating || !setup}
+                disabled={selectedCampaigns.size === 0 || isCreating}
                 className="btn-primary"
               >
                 {isCreating ? (

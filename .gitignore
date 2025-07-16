@@ -24,7 +24,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 .env
-venv/
+.venv/
 ENV/
 env/
 campaign.db

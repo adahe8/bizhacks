@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "bizhacks-frontend": "file:frontend"
+  }
+}

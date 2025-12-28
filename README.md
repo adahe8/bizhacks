@@ -2,8 +2,7 @@
 
 An AI-powered marketing campaign management platform that orchestrates campaigns across Facebook, Email, and Google Ads using CrewAI agents.
 
-Check out our deployment [live on Vercel](https://asteria-rouge.vercel.app/)!  
-Or watch our [short video demonstration on Youtube](https://www.youtube.com/watch?v=URq0O9-YYkI).
+Watch our [short video demonstration on Youtube](https://www.youtube.com/watch?v=URq0O9-YYkI).
 
 ## Features
 
